@@ -1290,3 +1290,35 @@ html[data-theme="vision"] .scrim{transition:opacity .2s ease}
 html[data-theme="vision"] #shCanvas{image-rendering:auto;max-width:100%}
 html[data-theme="vision"] :is(.panelSheet,.theme-picker-surface,nav){overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 @media (prefers-reduced-motion:reduce){html[data-theme="vision"] :is(.btn,.chip,.round,.menubtn,.shbtn,.theme-choice,.theme-mode,.v1-theme-trigger,nav button[data-act="tab"]){transition:none!important}html[data-theme="vision"] :is(.btn,.chip,.round,.menubtn,.shbtn,.theme-choice,.theme-mode,.v1-theme-trigger,nav button[data-act="tab"]):active{transform:none!important}}
+
+
+
+
+/* Smooth theme-aware glass header while the page scrolls underneath it. */
+html[data-theme="vision"] header.site{
+  z-index:30!important;
+  background:var(--bg)!important;
+  background:color-mix(in srgb,var(--bg) 88%,transparent)!important;
+  background-image:none!important;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 58%,transparent)!important;
+  box-shadow:0 3px 12px rgba(0,0,0,.035)!important;
+  -webkit-backdrop-filter:blur(10px) saturate(1.12)!important;
+  backdrop-filter:blur(10px) saturate(1.12)!important;
+  transition:background-color .28s ease,border-color .28s ease,box-shadow .28s ease,-webkit-backdrop-filter .28s ease,backdrop-filter .28s ease!important;
+}
+html.v1-scrolled[data-theme="vision"] header.site{
+  background:color-mix(in srgb,var(--bg) 70%,transparent)!important;
+  border-bottom-color:color-mix(in srgb,var(--line) 76%,transparent)!important;
+  box-shadow:0 5px 18px rgba(0,0,0,.09)!important;
+  -webkit-backdrop-filter:blur(18px) saturate(1.22)!important;
+  backdrop-filter:blur(18px) saturate(1.22)!important;
+  pointer-events:auto!important;
+}
+html.v1-scrolled[data-theme="vision"] header.site :is(.menubtn,.logo){pointer-events:auto!important}
+@media(prefers-reduced-motion:reduce){html[data-theme="vision"] header.site{transition:none!important}}
+
+
+/* Keep the fixed share action above the frosted brand bar. */
+html[data-theme="vision"] .top{z-index:32!important}
+html[data-theme="vision"] .top .shbtn{position:relative;z-index:33!important;pointer-events:auto!important}
+html[data-theme="vision"] .top .shbtn[hidden]{display:none!important}

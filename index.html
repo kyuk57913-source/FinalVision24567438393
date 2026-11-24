@@ -18,6 +18,92 @@
 <link rel="stylesheet" href="fonts.css">
 <script src="boot.js"></script>
 <link rel="stylesheet" href="main.css">
+<style id="sharp-overrides">
+/* ======================================================
+   Sharper / less-rounded corner override for Vision theme.
+   Layout, colours and behaviour are kept exactly as-is;
+   only border-radius values are reduced.
+   ====================================================== */
+
+/* Global radius token (used by inputs, generic buttons, etc.) */
+:root{--r:5px !important;}
+
+/* ---- Vision theme (dark navy) ---------------------------------- */
+html[data-theme="vision"]{
+  --r:5px !important;
+}
+/* hero card (was 24px) */
+html[data-theme="vision"] .hero{border-radius:6px !important;}
+/* panels / empty / live wrap (was 20px) */
+html[data-theme="vision"] :is(.panel,.empty,.livewrap,.whrow){border-radius:6px !important;}
+/* stat tiles (was 18px) */
+html[data-theme="vision"] #stats.kv>div.st{border-radius:6px !important;}
+/* trade rows / session rows / breakdown rows (was 18px) */
+html[data-theme="vision"] :is(.trade,.srow,.dtr,.brow){border-radius:6px !important;}
+/* heatmap / breakdown cells (was 12px) */
+html[data-theme="vision"] .cell{border-radius:4px !important;}
+/* buttons (was 14px) */
+html[data-theme="vision"] .btn{border-radius:5px !important;}
+/* segmented control (was 16px / 12px) */
+html[data-theme="vision"] .seg{border-radius:6px !important;}
+html[data-theme="vision"] .seg button{border-radius:4px !important;}
+/* chips, icon buttons, date buttons, account rows, close button (was 14px / pill) */
+html[data-theme="vision"] :is(.chip,.round,.datebtn,.dpnav,.dpbtn,.acrow,.x){border-radius:5px !important;}
+html[data-theme="vision"] .hpill{border-radius:999px !important;} /* keep win/loss pill shape */
+html[data-theme="vision"] .crange button{border-radius:4px !important;}
+/* inputs / textareas (was 14px) */
+html[data-theme="vision"] input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]),
+html[data-theme="vision"] textarea{border-radius:5px !important;}
+/* bottom nav buttons (was 16px). Nav itself stays full-width (0 radius) */
+html[data-theme="vision"] nav button{border-radius:5px !important;}
+/* FAB (was 20px rounded square) → sharper square */
+html[data-theme="vision"] .fab{border-radius:8px !important;}
+/* bottom sheet (was 28px 28px 0 0) */
+html[data-theme="vision"] .panelSheet{border-radius:10px 10px 0 0 !important;}
+/* date picker card (was 26px) */
+html[data-theme="vision"] .dpcard{border-radius:8px !important;}
+/* date picker nav arrows (were 50% circles) */
+html[data-theme="vision"] .dpnav{border-radius:5px !important;}
+/* toast (was 16px) */
+html[data-theme="vision"] .toast{border-radius:6px !important;}
+/* lock numpad (was 20px) */
+html[data-theme="vision"] #lkPad button{border-radius:6px !important;}
+/* progress bars */
+html[data-theme="vision"] :is(.brow .bbar,.brow .bbar i,.gbar){border-radius:3px !important;}
+html[data-theme="vision"] .dtag{border-radius:3px !important;}
+/* theme picker dialog (Appearance screen) */
+html[data-theme="vision"] #themePicker{border-radius:8px !important;}
+html[data-theme="vision"] .theme-choice{border-radius:6px !important;}
+html[data-theme="vision"] .thcard{border-radius:5px !important;}
+html[data-theme="vision"] .theme-mode-section{border-radius:6px !important;}
+html[data-theme="vision"] .theme-mode{border-radius:5px !important;}
+html[data-theme="vision"] #themeDone{border-radius:5px !important;}
+html[data-theme="vision"] .thsw{border-radius:5px !important;}
+/* keep circular day cells as circles (numbers in calendar grid) */
+html[data-theme="vision"] .dpday{border-radius:50% !important;}
+
+/* ---- Shared sheet / dialog / theme picker (non-vision themes too) ---- */
+.panelSheet{border-radius:8px 8px 0 0 !important;}
+.dpcard{border-radius:8px !important;}
+#themePicker{border-radius:8px !important;}
+.theme-choice{border-radius:6px !important;}
+.thcard{border-radius:5px !important;}
+.theme-mode-section{border-radius:6px !important;}
+.theme-mode{border-radius:5px !important;}
+#themeDone{border-radius:5px !important;}
+.toast{border-radius:6px !important;}
+#shCanvas{border-radius:6px !important;}
+.btn{border-radius:5px;}
+.seg button{border-radius:4px;}
+.chip{border-radius:5px;}
+.round,.shbtn{border-radius:6px;}
+.hpill,.crange button{border-radius:4px;}
+.dpbtn{border-radius:4px;}
+.acrow{border-radius:6px;}
+.gtile{border-radius:5px;}
+.bgprev{border-radius:5px;}
+#lkPad button{border-radius:6px;}
+</style>
 </head>
 <body>
 <div id="spacebg" aria-hidden="true"><span class="bh" style="--s:112px;left:72vw;top:11vh"><b></b><i></i></span></div>

@@ -12,7 +12,7 @@
   TH['vision-dark']={id:'vision-dark',name:'Vision Dark',mode:'dark',bg:'#07141A',surface:'#11252B',line:'#284846',ink:'#F0FAF6',muted:'#9EB9B2',accent:'#76DFBC',hi:'#76DFBC',win:'#76DFBC',loss:'#FF7B89',btnInk:'#07141A'};
   TH['clean-light']={id:'clean-light',name:'Clean Light',mode:'light',bg:'#F5F4F0',surface:'#FFFFFF',line:'#D6E1DC',ink:'#1C252B',muted:'#617478',accent:'#286B72',hi:'#286B72',win:'#168163',loss:'#C84355'};
   TH['minimal']={id:'minimal',name:'Minimal',mode:'light',bg:'#f5f5f2',surface:'#ffffff',line:'#e6e7e3',ink:'#202923',muted:'#7c857e',accent:'#345d4a',hi:'#345d4a',win:'#32775a',loss:'#b65a50'};
-  var KEY='pnl-theme',MODE_KEY='pnl-color-mode',modes={amoled:1,black:1,white:1},cur='minimal';
+  var KEY='pnl-theme',MODE_KEY='pnl-color-mode',modes={amoled:1,black:1,white:1},cur='vision';
   try{var sv=localStorage.getItem(KEY);if(TH[sv])cur=sv}catch(e){}
   var T=TH[cur],mode=T.mode==='light'?'white':'black';
   try{var sm=localStorage.getItem(MODE_KEY);if(modes[sm])mode=sm}catch(e){}

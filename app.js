@@ -1617,6 +1617,11 @@ function drawCard(cv, d, scale = 1) {
   const VT = document.documentElement.getAttribute('data-vt');
   if (VT === 'morpho') { C.curve = '#FFFFFF'; C.curveRgb = '255,255,255'; }
   else if (VT === 'vision') { const neg = d.tone < 0; C.curve = neg ? C.loss : C.win; C.curveRgb = neg ? C.lossRgb : C.winRgb; }
+  /* Keep the P&L trend readable against its own card color in every theme. */
+  if (/^#[0-9a-f]{6}$/i.test(C.bg) && /^#[0-9a-f]{6}$/i.test(C.curve) && contrastHex(C.curve, C.bg) < 3.8) {
+    C.curve = lumHex(C.bg) > .45 ? '#24352F' : '#EAF0F5';
+    C.curveRgb = hexRgb(C.curve);
+  }
   /* per-size layout: vertical positions of every block */
   const Y = wide ? { ic: 52, nm: 94, ti: 176, tiS: 42, rg: 216, rgS: 28, bg: 330, bgS: 124, sb: 376, sbS: 30, T: 100, B: 560, st: 436, sr: 112, lo: 36, vo: 84, lp: 32, vp: 46, ft: 680, bw: 568 }
     : land ? { ic: 64, nm: 110, ti: 214, tiS: 46, rg: 258, rgS: 32, bg: 400, bgS: 150, sb: 450, sbS: 34, T: 150, B: 830, st: 560, sr: 160, lo: 48, vo: 112, lp: 36, vp: 54, ft: 1038, bw: 568 }
