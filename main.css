@@ -973,8 +973,14 @@ html.lite.v1-scrolled[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt
 html[data-theme="vision"] .panelSheet{transition:transform .22s cubic-bezier(.22,1,.36,1);will-change:auto}
 html[data-theme="vision"] .scrim,html[data-theme="vision"] .dpscrim{transition:opacity .2s ease}
 html[data-theme="vision"] .dpcard{transition:transform .2s cubic-bezier(.22,1,.36,1),opacity .2s ease}
-@keyframes v1PageIn{from{opacity:.88}to{opacity:1}}
-@media(prefers-reduced-motion:no-preference){html[data-theme="vision"]:not(.lite) main>section:not([hidden]){animation:v1PageIn .18s ease-out}}
+@keyframes v1PageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes v1PageInRight{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes v1PageInLeft{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:no-preference){
+html:not(.lite) main>section:not([hidden]){animation:v1PageIn .28s cubic-bezier(.22,1,.36,1)}
+html:not(.lite)[data-navdir="forward"] main>section:not([hidden]){animation-name:v1PageInRight}
+html:not(.lite)[data-navdir="back"] main>section:not([hidden]){animation-name:v1PageInLeft}
+}
 /* A persistent, fading scrim prevents the menu background from popping in/out. */
 .v1-menu-backdrop{display:none;position:fixed;inset:0;z-index:9;background:rgba(3,8,18,.36);opacity:0;pointer-events:none;transition:opacity .2s ease}
 html[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt="vision-dark"],[data-vt="clean-light"],[data-vt="minimal"]) .v1-menu-backdrop{display:block}
@@ -986,7 +992,7 @@ html.v1-scrolled[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt="vis
 @media(max-width:370px){html[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt="vision-dark"],[data-vt="clean-light"],[data-vt="minimal"]) .site .lt small{font-size:16px}}
 html[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt="vision-dark"],[data-vt="clean-light"],[data-vt="minimal"]) :is(.menubtn,.top .shbtn,.site .lt small){-webkit-backdrop-filter:none;backdrop-filter:none}
 html.menu[data-theme="vision"]:is([data-vt="floating-blue"],[data-vt="vision-dark"],[data-vt="clean-light"],[data-vt="minimal"])::after{display:none}
-@media(prefers-reduced-motion:reduce){.v1-menu-backdrop,html[data-theme="vision"] .panelSheet,html[data-theme="vision"] .dpcard,html[data-theme="vision"] .scrim,html[data-theme="vision"] .dpscrim{transition:none!important}html[data-theme="vision"] main>section:not([hidden]){animation:none!important}}
+@media(prefers-reduced-motion:reduce){.v1-menu-backdrop,html[data-theme="vision"] .panelSheet,html[data-theme="vision"] .dpcard,html[data-theme="vision"] .scrim,html[data-theme="vision"] .dpscrim{transition:none!important}html main>section:not([hidden]){animation:none!important}}
 
 /* Settings: a single, compact entry for appearance, placed with other preferences. */
 .v1-theme-launch{margin:24px 0 14px}

@@ -520,6 +520,15 @@ function renderData() {
   $('count').textContent = S.trades.length + ' trade' + (S.trades.length === 1 ? '' : 's');
 }
 
+/* ---------- page transition direction ---------- */
+const TAB_ORDER = ['journal', 'reports', 'trades', 'dash', 'sessions', 'appearance', 'data'];
+function setNavDir(next) {
+  const prev = S && S.tab;
+  const a = TAB_ORDER.indexOf(prev), b = TAB_ORDER.indexOf(next);
+  const dir = (a === -1 || b === -1 || a === b) ? 'fade' : (b > a ? 'forward' : 'back');
+  document.documentElement.dataset.navdir = dir;
+}
+
 /* ---------- liquid glass pill: drag + water-drop motion ---------- */
 let LG = { sync() {} };
 try { LG = (() => {
@@ -609,6 +618,7 @@ try { LG = (() => {
     wantRing = changed;
     if (changed) {
       /* let the pill glide into place first; the heavy page render waits for it so the motion never hitches */
+      setNavDir(t.dataset.v);
       S.tab = t.dataset.v; tx = rect(t).x; run();
       tabs().forEach(b => b.setAttribute('aria-current', b === t ? 'page' : 'false'));
       clearTimeout(rT);
@@ -1959,49 +1969,112 @@ function closeShare() {
 const isNative = () => { const c = window.Capacitor; return !!(c && c.isNativePlatform && c.isNativePlatform() && c.Plugins); };
 const cardName = () => 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today() + '.png';
 // Draw still-image exports at higher resolution without increasing live-preview/video workload.
-function exportCardCanvas() {
-  if (!SH.d || BG.cardVid) return $('shCanvas');
-  const c = document.createElement('canvas');
-  try { const scale = navigator.deviceMemory && navigator.deviceMemory <= 2 ? 1.5 : 2; drawCard(c, SH.d, scale); return c; }
-  catch (e) { c.width = c.height = 1; return $('shCanvas'); }
+function cardExportScales() {
+  const hiMem = !(navigator.deviceMemory && navigator.deviceMemory <= 2);
+  const base = hiMem ? [2, 1.5, 1] : [1.5, 1];
+  const sz = CARD_SIZES[SET.cardRatio] || CARD_SIZES['43'], W = sz[0], H = sz[1];
+  const maxPx = 5500000, maxDim = 2560;
+  const out = [];
+  for (const s of base) {
+    let sc = s;
+    sc = Math.min(sc, maxDim / Math.max(W, H));
+    sc = Math.min(sc, Math.sqrt(maxPx / (W * H)));
+    sc = Math.round(sc * 100) / 100;
+    if (sc >= 0.75 && out.indexOf(sc) < 0) out.push(sc);
+  }
+  if (out.indexOf(1) < 0) out.push(1);
+  return out;
 }
-function releaseCardCanvas(c) { if (c && c !== $('shCanvas')) c.width = c.height = 1; }
-const cardB64 = () => { const c = exportCardCanvas(); try { return c.toDataURL('image/png').split(',')[1]; } finally { releaseCardCanvas(c); } };
+function drawExportCanvas(scale) {
+  if (!SH.d) return null;
+  if (BG.cardVid) return $('shCanvas');
+  const c = document.createElement('canvas');
+  try { drawCard(c, SH.d, scale); return c; }
+  catch (e) { try { c.width = c.height = 1; } catch (_) {} return null; }
+}
+function releaseCardCanvas(c) { if (c && c !== $('shCanvas')) { try { c.width = c.height = 1; } catch (_) {} } }
 const b64Blob = b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: 'image/png' }); };
-const cardBlob = async () => {
-  const c = exportCardCanvas(); let b = null;
-  try {
-    try { b = await new Promise(res => { try { c.toBlob(res, 'image/png'); } catch (e) { res(null); } }); } catch (e) {}
-    if (!b || !b.size) b = b64Blob(c.toDataURL('image/png').split(',')[1]);
-    return b;
-  } finally { releaseCardCanvas(c); }
-};
+function canvasToDataURLSafe(c) {
+  try { const u = c.toDataURL('image/png'); if (u && u.indexOf('data:image/png') === 0 && u.length > 200) return u; } catch (e) {}
+  try { const u = c.toDataURL('image/jpeg', 0.92); if (u && u.indexOf('data:image/jpeg') === 0 && u.length > 200) return u; } catch (e) {}
+  return '';
+}
+async function canvasToBlobSafe(c) {
+  const toBlobP = (type, q) => new Promise(res => {
+    let done = false; const fin = v => { if (done) return; done = true; res(v); };
+    try { c.toBlob(b => fin(b), type, q); } catch (e) { fin(null); }
+    setTimeout(() => fin(null), 4000);
+  });
+  try { const b = await toBlobP('image/png'); if (b && b.size > 200) return b; } catch (e) {}
+  const url = canvasToDataURLSafe(c);
+  if (url) {
+    try {
+      const mime = url.slice(5, url.indexOf(';')) || 'image/png';
+      const bin = atob(url.split(',')[1]), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return new Blob([u], { type: mime });
+    } catch (e) {}
+  }
+  try { const b = await toBlobP('image/jpeg', 0.92); if (b && b.size > 200) return b; } catch (e) {}
+  return null;
+}
+async function exportCardBlob() {
+  for (const sc of cardExportScales()) {
+    const c = drawExportCanvas(sc);
+    if (!c) continue;
+    try { const b = await canvasToBlobSafe(c); if (b && b.size > 200) return b; }
+    finally { releaseCardCanvas(c); }
+  }
+  try { const b = await canvasToBlobSafe($('shCanvas')); if (b && b.size > 200) return b; } catch (e) {}
+  return null;
+}
+function exportCardDataURL() {
+  for (const sc of cardExportScales()) {
+    const c = drawExportCanvas(sc);
+    if (!c) continue;
+    try { const u = canvasToDataURLSafe(c); if (u) return u; }
+    finally { releaseCardCanvas(c); }
+  }
+  try { return canvasToDataURLSafe($('shCanvas')); } catch (e) {}
+  return '';
+}
+const cardB64 = () => { const u = exportCardDataURL(); return u ? (u.split(',')[1] || '') : ''; };
+const cardBlob = async () => { const b = await exportCardBlob(); if (b) return b; throw new Error('card export failed'); };
 const errCancel = e => !!(e && (e.name === 'AbortError' || /cancel|abort|dismiss/i.test(String(e.message || e))));
 
 async function shareCard() { if (BG.cardVid) return videoOut('share'); return shareCardImg(); }
 async function shareCardImg() {
-  const name = cardName();
+  const baseName = 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today();
+  try { await fontsReady(); } catch (e) {}
   if (isNative()) {
     const P = window.Capacitor.Plugins;
     if (P.Filesystem && P.Share) {
       try {
-        await P.Filesystem.writeFile({ path: name, data: cardB64(), directory: 'CACHE' });
-        const r = await P.Filesystem.getUri({ path: name, directory: 'CACHE' });
-        await P.Share.share({ title: name, files: [r.uri], dialogTitle: 'Share P&L card' });
-        return;
+        const data = cardB64();
+        if (data) {
+          await P.Filesystem.writeFile({ path: baseName + '.png', data, directory: 'CACHE' });
+          const r = await P.Filesystem.getUri({ path: baseName + '.png', directory: 'CACHE' });
+          await P.Share.share({ title: baseName + '.png', files: [r.uri], dialogTitle: 'Share P&L card' });
+          return;
+        }
       } catch (e) { if (errCancel(e)) return; }
     }
   }
   try {
-    const blob = await cardBlob(), file = new File([blob], name, { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    const blob = await exportCardBlob();
+    if (blob) {
+      const ext = /jpeg/.test(blob.type) ? 'jpg' : 'png';
+      const name = baseName + '.' + ext;
+      const file = new File([blob], name, { type: blob.type || 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    }
   } catch (e) { if (errCancel(e)) return; }
   await saveCard();
 }
 
 /* last resort that always works: show the picture so it can be pressed and held to save */
 function showCardImage() {
-  let url = ''; const c = exportCardCanvas(); try { url = c.toDataURL('image/png'); } catch (e) {} finally { releaseCardCanvas(c); }
+  const url = exportCardDataURL();
   if (!url) { toast('Could not save the image'); return; }
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px';
@@ -2019,7 +2092,8 @@ async function saveCard() {
   try { await saveCardNow(); } finally { cardSaving = false; }
 }
 async function saveCardNow() {
-  const name = cardName();
+  const baseName = 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today();
+  try { await fontsReady(); } catch (e) {}
   if (isNative()) {
     const P = window.Capacitor.Plugins;
     if (P.Filesystem) {
@@ -2027,13 +2101,13 @@ async function saveCardNow() {
       if (data) {
         try { if (P.Filesystem.requestPermissions) await P.Filesystem.requestPermissions(); } catch (e) {}
         for (const dir of ['DOCUMENTS', 'DOCUMENTS', 'EXTERNAL']) {
-          try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + name, data, directory: dir, recursive: true }); toast('Saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal')); return; } catch (e) {}
+          try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + baseName + '.png', data, directory: dir, recursive: true }); toast('Saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal')); return; } catch (e) {}
         }
         if (P.Share) {
           try {
-            await P.Filesystem.writeFile({ path: name, data, directory: 'CACHE' });
-            const r = await P.Filesystem.getUri({ path: name, directory: 'CACHE' });
-            await P.Share.share({ title: name, files: [r.uri], dialogTitle: 'Save P&L card' });
+            await P.Filesystem.writeFile({ path: baseName + '.png', data, directory: 'CACHE' });
+            const r = await P.Filesystem.getUri({ path: baseName + '.png', directory: 'CACHE' });
+            await P.Share.share({ title: baseName + '.png', files: [r.uri], dialogTitle: 'Save P&L card' });
             return;
           } catch (e) { if (errCancel(e)) return; }
         }
@@ -2041,9 +2115,14 @@ async function saveCardNow() {
     }
   }
   try {
-    const blob = await cardBlob(), a = document.createElement('a'), u = URL.createObjectURL(blob);
-    a.href = u; a.download = name; a.rel = 'noopener'; a.style.display = 'none'; document.body.appendChild(a); a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(u); }, 4000); toast('Image downloaded'); return;
+    const blob = await exportCardBlob();
+    if (blob) {
+      const ext = /jpeg/.test(blob.type) ? 'jpg' : 'png';
+      const name = baseName + '.' + ext;
+      const a = document.createElement('a'), u = URL.createObjectURL(blob);
+      a.href = u; a.download = name; a.rel = 'noopener'; a.style.display = 'none'; document.body.appendChild(a); a.click();
+      setTimeout(() => { a.remove(); URL.revokeObjectURL(u); }, 4000); toast('Image downloaded'); return;
+    }
   } catch (e) {}
   showCardImage();
 }
@@ -2635,7 +2714,7 @@ window.addEventListener('resize', () => {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act, v = el.dataset.v;
-  if (a === 'tab') { S.tab = v; render(); document.body.scrollTop = 0; window.scrollTo(0, 0); }
+  if (a === 'tab') { setNavDir(v); S.tab = v; render(); document.body.scrollTop = 0; window.scrollTo(0, 0); }
   else if (a === 'eye') { MASK = !MASK; try { localStorage.setItem('pnl-mask', MASK ? '1' : '0'); } catch (e) {} render(); }
   else if (a === 'crange') { SET.chartRange = v; saveSet(); CV.seen = []; renderJournal(); }
   else if (a === 'chip') { S.symbol = v; S.day = null; render(); }
@@ -2643,7 +2722,7 @@ document.addEventListener('click', e => {
   else if (a === 'sharelive' || a === 'sharetrade') openShare('trade', Number(el.dataset.id));
   else if (a === 'day') { S.day = S.day === el.dataset.d ? null : el.dataset.d; renderReports(); }
   else if (a === 'mnav') { S.month = shiftMonth(S.month, Number(v)); S.day = null; renderReports(); }
-  else if (a === 'month') { S.month = el.dataset.m; S.day = null; if (S.tab !== 'reports') { S.tab = 'reports'; render(); } else renderReports(); document.body.scrollTop = 0; window.scrollTo(0, 0); }
+  else if (a === 'month') { S.month = el.dataset.m; S.day = null; if (S.tab !== 'reports') { setNavDir('reports'); S.tab = 'reports'; render(); } else renderReports(); document.body.scrollTop = 0; window.scrollTo(0, 0); }
   else if (a === 'symfill') { $('f-symbol').value = v; }
   else if (a === 'sample') loadSample();
   else if (a === 'imp') doImport(v);
@@ -2652,7 +2731,7 @@ document.addEventListener('click', e => {
   else if (a === 'dpday') pickDate(el.dataset.d);
   else if (a === 'sess') setSess(S.session === v ? '' : v);
   else if (a === 'gunit') { SET.unit = v; saveSet(); renderGoalForm(true); }
-  else if (a === 'goalset') { S.tab = 'data'; render(); requestAnimationFrame(() => $('goalPanel').scrollIntoView()); }
+  else if (a === 'goalset') { setNavDir('data'); S.tab = 'data'; render(); requestAnimationFrame(() => $('goalPanel').scrollIntoView()); }
   else if (a === 'shkind') { SH.kind = v; refreshShare(); }
   else if (a === 'shstep') shareStep(Number(v));
   else if (a === 'shhide') { SET.hide = v === '1'; saveSet(); refreshShare(); }
