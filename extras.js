@@ -372,3 +372,4 @@ b.addEventListener('click',function(e){e.stopPropagation();set(!r.classList.cont
 document.addEventListener('click',function(e){if(e.target.closest&&e.target.closest('nav button[data-act=tab]'))set(false)},true);
 document.addEventListener('click',function(e){if(r.classList.contains('menu')&&!e.target.closest('nav'))set(false)})})();
 }catch(e){console.error(e)}
+

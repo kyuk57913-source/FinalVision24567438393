@@ -53,10 +53,24 @@ const dayLabel = s => parseDay(s).toLocaleDateString('en-GB', { weekday: 'short'
 const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); };
 const shiftMonth = (ym, k) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + k, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
 
-function toast(msg) {
+function toast(msg, ms) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2200);
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms || 2200);
 }
+/* unexpected errors: keep the last 20 in memory (window.__errlog) and tell the user, at most once per 15 s */
+window.__errlog = [];
+function logErr(kind, e) {
+  try {
+    const m = String(e && e.message || e);
+    if (/ResizeObserver|AbortError|NotAllowedError/.test(m)) return;
+    window.__errlog.push({ t: Date.now(), kind, m }); if (window.__errlog.length > 20) window.__errlog.shift();
+    console.error(kind, e);
+    const now = Date.now();
+    if (now - (logErr.last || 0) > 15000) { logErr.last = now; toast('Something went wrong. If anything looks off, export a backup.', 5000); }
+  } catch (_) {}
+}
+window.addEventListener('error', ev => logErr('error', ev.error || ev.message));
+window.addEventListener('unhandledrejection', ev => logErr('promise', ev.reason));
 
 /* ---------- trade maths ---------- */
 function calc(t) {
@@ -116,7 +130,18 @@ const tsTx = (mode, fn) => new Promise((res, rej) => {
   tx.onerror = tx.onabort = () => rej(tx.error || new Error('idb tx'));
   rq = fn(tx.objectStore('trades'));
 });
-const tsLs = k => { try { const v = localStorage.getItem(k), a = v ? JSON.parse(v) : null; return Array.isArray(a) ? a : null; } catch (e) { return null; } };
+/* a stored value that exists but cannot be read is never silently treated as "no trades": keep a copy and warn */
+function tsCorrupt(k, raw) {
+  (TS.warn = TS.warn || []).push('Some saved trades could not be read. A copy was kept in browser storage under "' + k + '-corrupt". Export a backup before adding trades.');
+  try { if (localStorage.getItem(k + '-corrupt') == null) localStorage.setItem(k + '-corrupt', raw); } catch (e) { console.warn('could not keep corrupt copy', e); }
+}
+const tsLs = k => {
+  let v = null; try { v = localStorage.getItem(k); } catch (e) { return null; }
+  if (!v) return null;
+  try { const a = JSON.parse(v); if (Array.isArray(a)) return a; } catch (e) {}
+  tsCorrupt(k, v); return null;
+};
+function tsNotify() { if (TS.warn && TS.warn.length) { console.warn(TS.warn); toast(TS.warn[0], 9000); } }
 const tsGet = k => TS.cache.get(k) || [];
 const tsQueue = (k, fn) => { const p = (TS.chain.get(k) || Promise.resolve()).then(fn); TS.chain.set(k, p.catch(() => {})); return p; };
 function tsPersist() {   /* ask the browser not to auto-clear our data; not awaited, some browsers show a prompt */
@@ -125,10 +150,68 @@ function tsPersist() {   /* ask the browser not to auto-clear our data; not awai
     (st.persisted ? st.persisted() : Promise.resolve(false)).then(p => p || st.persist()).then(p => { TS.persisted = !!p; paintStore(); }).catch(() => {});
   } catch (e) {}
 }
+/* ---------- data format version + safe migrations ----------
+   Trades are stored as plain arrays. The format version lives in localStorage ('pnl-schema').
+   To change the trade format later: raise DATA_VERSION and add MIGRATIONS[newVersion] = arr => newArr.
+   Before any migration changes data, a snapshot of the old data is kept ('pnl-premigrate-v<old>'). */
+const DATA_VERSION = 1, SCHEMA_KEY = 'pnl-schema';
+const numStr = v => (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) ? Number(v) : v;
+const MIGRATIONS = {
+  /* v0 -> v1: numbers saved as text become numbers, and every trade gets its own unique id */
+  1: arr => {
+    const seen = new Set(); let bump = 0;
+    return arr.map(t => {
+      if (!t || typeof t !== 'object') return t;
+      const o = Object.assign({}, t);
+      ['id', 'pnl', 'entry', 'exit', 'sl', 'tp', 'lot'].forEach(k => { if (k in o) o[k] = numStr(o[k]); });
+      if (!Number.isFinite(o.id) || seen.has(o.id)) { do { o.id = Date.now() + (bump++); } while (seen.has(o.id)); }
+      seen.add(o.id);
+      return o;
+    });
+  }
+};
+function migrateArr(arr, from) {
+  let out = Array.isArray(arr) ? arr : [];
+  for (let v = from + 1; v <= DATA_VERSION; v++) if (MIGRATIONS[v]) out = MIGRATIONS[v](out);
+  return out;
+}
+async function tsMigrate() {
+  let from = 0; try { from = parseInt(localStorage.getItem(SCHEMA_KEY), 10) || 0; } catch (e) {}
+  if (from > DATA_VERSION) { (TS.warn = TS.warn || []).push('Your saved data was made by a newer version of this app. Update the app before adding trades, or old data may be misread.'); return; }
+  if (from === DATA_VERSION) return;
+  const next = new Map(); let changed = false;
+  TS.cache.forEach((arr, k) => { const m = migrateArr(arr, from); next.set(k, m); if (JSON.stringify(m) !== JSON.stringify(arr)) changed = true; });
+  if (changed) {
+    const snap = {}; TS.cache.forEach((arr, k) => { snap[k] = arr; });
+    let kept = false; const snapKey = 'pnl-premigrate-v' + from;
+    try { localStorage.setItem(snapKey, JSON.stringify(snap)); kept = true; } catch (e) {}
+    if (!kept && TS.mode === 'idb') { try { await tsTx('readwrite', st => st.put(snap, snapKey)); kept = true; } catch (e) {} }
+    if (!kept) { console.warn('migration skipped: could not keep a safety copy of the old data'); return; }
+    const old = new Map(TS.cache); let ok = true;
+    for (const [k, m] of next) { if (!(await tsSet(k, m))) { ok = false; break; } }
+    if (!ok) { for (const [k, a] of old) await tsSet(k, a); (TS.warn = TS.warn || []).push('Data update failed, nothing was changed.'); return; }
+  }
+  try { localStorage.setItem(SCHEMA_KEY, String(DATA_VERSION)); } catch (e) { console.warn('schema version not stamped', e); }
+}
+
+/* ---------- backup reminder ---------- */
+const BK_LAST = 'pnl-last-backup', BK_NAG = 'pnl-bk-nag', DAY = 864e5;
+const lsNum = k => { try { return Number(localStorage.getItem(k)) || 0; } catch (e) { return 0; } };
+function markBackup() { try { localStorage.setItem(BK_LAST, String(Date.now())); } catch (e) {} paintStore(); }
+function backupDays() { const t = lsNum(BK_LAST); return t ? Math.floor((Date.now() - t) / DAY) : null; }
+function backupNag() {
+  let n = 0; TS.cache.forEach(a => { n += a.length; });
+  if (n < 10) return;
+  const d = backupDays(); if (d != null && d < 14) return;
+  if (Date.now() - lsNum(BK_NAG) < 3 * DAY) return;
+  try { localStorage.setItem(BK_NAG, String(Date.now())); } catch (e) {}
+  toast(d == null ? 'You have not made a backup yet. Export one in Settings.' : 'Your last backup was ' + d + ' days ago. Export a new one in Settings.', 6000);
+}
+
 async function tsInit() {
   tsPersist();
   const keys = AC.list.map(a => acKey(a.id)), put = [], clean = [];
-  try { TS.db = await tsOpen(); } catch (e) { TS.db = null; }
+  try { TS.db = await tsOpen(); } catch (e) { TS.db = null; if (!/no idb/.test(String(e && e.message))) (TS.warn = TS.warn || []).push('The app database could not be opened, so only browser storage is shown. Earlier trades may be hidden. Export a backup before changing anything.'); }
   if (TS.db) {
     try {
       for (const k of keys) {
@@ -148,16 +231,18 @@ async function tsInit() {
       clean.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
     } catch (e) {
       console.error(e); TS.mode = 'ls'; TS.cache.clear();
-      for (const k of put) { try { await tsTx('readwrite', s => s.delete(k)); } catch (e2) {} }   /* never leave a stale copy behind */
+      (TS.warn = TS.warn || []).push('The app database could not be read, so only browser storage is shown. Earlier trades may be hidden. Export a backup before changing anything.');
+      for (const k of put) { try { await tsTx('readwrite', s => s.delete(k)); } catch (e2) { console.warn('cleanup failed', e2); } }   /* never leave a stale copy behind */
     }
   }
   if (TS.mode !== 'idb') {
     for (const k of keys) {
       let v = tsLs(k);
-      if (!v) { try { if (window.storage) { const r = await window.storage.get(k); if (r && r.value) v = JSON.parse(r.value); } } catch (e) {} }
+      if (!v) { try { if (window.storage) { const r = await window.storage.get(k); if (r && r.value) v = JSON.parse(r.value); } } catch (e) { console.warn('window.storage read failed', e); } }
       if (v) TS.cache.set(k, v);
     }
   }
+  try { await tsMigrate(); } catch (e) { console.error('migration error', e); }
 }
 function tsSet(k, arr) {
   TS.cache.set(k, arr);
@@ -181,10 +266,19 @@ function tsDel(k) {
 }
 async function load() { return tsGet(trKey()).slice(); }
 async function save() { return tsSet(trKey(), S.trades); }
+/* save, then tell the user: success message if it worked, a clear warning if the browser refused to store it */
+async function persist(okMsg) {
+  let ok = false;
+  try { ok = await save(); } catch (e) { console.error('save failed', e); }
+  if (!ok) toast('Not saved: the browser refused to store it. Export a backup now.', 6000);
+  else if (okMsg) toast(okMsg);
+  return ok;
+}
 function paintStore() {
   const el = $('storeNote'); if (!el) return;
   el.textContent = (TS.mode === 'idb' ? 'App database' : 'Browser storage (limited space)') +
-    (TS.persisted == null ? '' : TS.persisted ? ' \u00b7 protected from auto-clear' : ' \u00b7 not protected from auto-clear, back up often');
+    (TS.persisted == null ? '' : TS.persisted ? ' \u00b7 protected from auto-clear' : ' \u00b7 not protected from auto-clear, back up often') +
+    (backupDays() == null ? ' \u00b7 no backup yet' : backupDays() === 0 ? ' \u00b7 last backup today' : ' \u00b7 last backup ' + backupDays() + ' days ago');
 }
 
 /* ---------- views ---------- */
@@ -706,13 +800,13 @@ async function doSubmit() {
   if (S.live) { t.live = true; t.exit = null; }
   if (S.editing) S.trades = S.trades.map(x => x.id === S.editing ? t : x); else S.trades.push(t);
   S.month = t.date.slice(0, 7);
-  closeSheet(); render(); const ok = await save(); toast(ok ? 'Saved' : 'Not saved: the browser refused to store it. Export a backup now.');
+  closeSheet(); render(); await persist('Saved');
 }
 
 async function deleteTrade() {
   if (!S.confirmDel) { S.confirmDel = true; $('delBtn').textContent = 'Tap again to delete'; return; }
   S.trades = S.trades.filter(x => x.id !== S.editing);
-  closeSheet(); render(); await save(); toast('Deleted');
+  closeSheet(); render(); await persist('Deleted');
 }
 
 /* ---------- CSV ---------- */
@@ -798,7 +892,7 @@ function buildBackup() {
   });
   const settings = {}; Object.keys(SET).forEach(k => { const v = SET[k]; if (!(typeof v === 'string' && v.length > 50000)) settings[k] = v; });
   const ui = {}; BK_UI.forEach(k => { try { const v = localStorage.getItem(k); if (v != null) ui[k] = v; } catch (e) {} });
-  return JSON.stringify({ app: 'pnl-journal', version: 2, exported: new Date().toISOString(), accounts: { list: AC.list, active: AC.active }, settings, trades, ui });
+  return JSON.stringify({ app: 'pnl-journal', version: 2, schema: DATA_VERSION, exported: new Date().toISOString(), accounts: { list: AC.list, active: AC.active }, settings, trades, ui });
 }
 function cleanTrades(a) {
   return (Array.isArray(a) ? a : []).filter(t => t && typeof t === 'object' && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && typeof t.symbol === 'string' && t.symbol && (t.live || Number.isFinite(t.pnl)))
@@ -807,11 +901,13 @@ function cleanTrades(a) {
 function readBackup(text) {
   let o; try { o = JSON.parse(text.replace(/^\uFEFF/, '')); } catch (e) { return { error: 'This file could not be read' }; }
   if (!o || typeof o !== 'object' || !o.trades || typeof o.trades !== 'object') return { error: 'This does not look like a backup from this app' };
+  const from = Number.isFinite(o.schema) ? o.schema : 0;
+  if (from > DATA_VERSION) return { error: 'This backup was made by a newer version of the app. Update the app first.' };
   const list = (o.accounts && Array.isArray(o.accounts.list) ? o.accounts.list : []).filter(a => a && typeof a.id === 'string' && /^[\w-]{1,40}$/.test(a.id) && typeof a.name === 'string')
     .map(a => ({ id: a.id, name: a.name.slice(0, 24), set: a.set && typeof a.set === 'object' ? a.set : undefined }));
   if (!list.length) list.push({ id: 'main', name: 'Main' });
   const trades = {}; let n = 0;
-  list.forEach(a => { trades[a.id] = cleanTrades(o.trades[a.id]); n += trades[a.id].length; });
+  list.forEach(a => { trades[a.id] = cleanTrades(migrateArr(o.trades[a.id], from));   /* normalise first, then drop truly invalid rows */ n += trades[a.id].length; });
   const active = o.accounts && list.some(a => a.id === o.accounts.active) ? o.accounts.active : list[0].id;
   return { bk: { list, active, trades, settings: o.settings && typeof o.settings === 'object' ? o.settings : null, ui: o.ui && typeof o.ui === 'object' ? o.ui : {} }, n, accounts: list.length };
 }
@@ -855,7 +951,7 @@ async function doBackup(mode) {
     }
   }
   S.pendingBk = null; $('importBox').hidden = true; $('paste').value = ''; S.month = null;
-  render(); await save(); toast(add ? 'Imported ' + add + ' trade' + (add === 1 ? '' : 's') : 'Nothing new to import (all duplicates)');
+  render(); await persist(add ? 'Imported ' + add + ' trade' + (add === 1 ? '' : 's') : 'Nothing new to import (all duplicates)');
 }
 
 async function exportBackup() {
@@ -867,24 +963,24 @@ async function exportBackup() {
       await P.Filesystem.writeFile({ path: name, data: csv, directory: 'CACHE', encoding: 'utf8' });
       const r = await P.Filesystem.getUri({ path: name, directory: 'CACHE' });
       await P.Share.share({ title: name, files: [r.uri], dialogTitle: 'Save your backup' });
-      return;
+      markBackup(); return;
     } catch (e) { if (e && /cancel/i.test(String(e.message || e))) return; }
   }
   try {
     const file = new File([csv], name, { type: 'application/json' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); markBackup(); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'application/json' })); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
-  toast('Download started');
+  markBackup(); toast('Download started');
 }
 async function copyBackup() {
   let csv; try { csv = await backupText(); } catch (e) { toast(e.message); return; }
-  try { await navigator.clipboard.writeText(csv); toast('Copied. Paste it somewhere safe.'); return; } catch (e) {}
+  try { await navigator.clipboard.writeText(csv); markBackup(); toast('Copied. Paste it somewhere safe.'); return; } catch (e) {}
   const ta = document.createElement('textarea'); ta.value = csv; document.body.appendChild(ta); ta.select();
-  try { document.execCommand('copy'); toast('Copied. Paste it somewhere safe.'); } catch (e) { toast('Could not copy'); }
+  try { document.execCommand('copy'); markBackup(); toast('Copied. Paste it somewhere safe.'); } catch (e) { toast('Could not copy'); }
   ta.remove();
 }
 function showImport(text) {
@@ -923,7 +1019,7 @@ async function doImport(mode) {
     S.pending.forEach(t => { if (takeDup(have, t)) return; if (ids.has(t.id)) t.id = Date.now() + add; ids.add(t.id); S.trades.push(t); add++; });
   }
   const n = mode === 'replace' ? S.pending.length : add; S.pending = null; $('importBox').hidden = true; $('paste').value = ''; S.month = null;
-  render(); await save(); toast(n ? 'Imported ' + n + ' trade' + (n === 1 ? '' : 's') : 'Nothing new to import (all duplicates)');
+  render(); await persist(n ? 'Imported ' + n + ' trade' + (n === 1 ? '' : 's') : 'Nothing new to import (all duplicates)');
 }
 
 /* ---------- sample + clear ---------- */
@@ -962,21 +1058,21 @@ async function loadSample() {
   /* land on exactly +12,439.00 */
   const gap = +(TARGET - sum(S.trades.map(t => t.pnl))).toFixed(2);
   if (gap) { const lw = [...S.trades].reverse().find(t => t.pnl > 0); if (lw) lw.pnl = +(lw.pnl + gap).toFixed(2); }
-  S.month = null; render(); await save();
+  S.month = null; render(); await persist();
 }
 let clearArmed = false;
 async function clearAll() {
   const b = $('clearBtn');
   if (!clearArmed) { clearArmed = true; b.textContent = 'Tap again to delete everything'; setTimeout(() => { clearArmed = false; b.textContent = 'Delete all trades'; }, 4000); return; }
   clearArmed = false; b.textContent = 'Delete all trades';
-  S.trades = []; S.month = null; S.day = null; render(); await save(); toast('All trades deleted');
+  S.trades = []; S.month = null; S.day = null; render(); await persist('All trades deleted');
 }
 
 /* ---------- settings: goal, balance, name, hide-$ ---------- */
 const SESS = ['Asia', 'London', 'New York'];
 const SET = { unit: '$', goal: null, balance: null, name: '', hide: false, cardRatio: '43', cardRound: 's', cardStyle: 'term', font: 'default', dashRange: '90', maxLoss: null };
 try { const v = JSON.parse(localStorage.getItem('pnl-settings') || 'null'); if (v && typeof v === 'object') Object.assign(SET, v); } catch (e) {}
-function saveSet() { try { localStorage.setItem('pnl-settings', JSON.stringify(SET)); } catch (e) {} }
+function saveSet() { try { localStorage.setItem('pnl-settings', JSON.stringify(SET)); } catch (e) { console.warn('settings not saved', e); } }
 const FONT_IDS = ['default', 'figtree', 'plexmono'];
 const FONT_FACE = { default: 'Urbanist', figtree: 'Figtree', plexmono: 'IBM Plex Mono' };
 function applyFont() {
@@ -2023,7 +2119,7 @@ async function acEnter() {
 }
 async function acSwitch(id) {
   if (id === AC.active) { closeAc(); return; }
-  await save();
+  await persist();
   acCur().set = { unit: SET.unit, goal: SET.goal, balance: SET.balance, maxLoss: SET.maxLoss };
   AC.active = id; acApplySet(acCur()); saveAc();
   await acEnter(); closeAc(); toast(acCur().name);
@@ -2485,11 +2581,26 @@ function renderDashLimit() {
   set(`<div class="lbanner" role="alert"><b>${hit ? 'Daily loss limit reached. Stop trading for today.' : 'Close to your daily loss limit. Trade carefully.'}</b><br>Today ${dmoney(tn)} of ${lim} limit (${Math.round(f * 100)}%)</div>`);
   if (S.tab === 'journal') bc.add(hit ? 'limhit' : 'limwarn');
 }
+/* smooth-switch: only rebuild what is on screen, and only when the data actually changed */
+function dashKey(D) {
+  const el = document.documentElement;
+  return [D.length, S.symbol, SET.dashRange || '90', window.innerWidth, today(), MASK ? 1 : 0, el.className, el.dataset.theme || '', el.dataset.vt || '', JSON.stringify(SET),
+    D.map(t => t.id + '|' + t.pnl + '|' + t.symbol + '|' + t.date + '|' + t.side + '|' + (t.session || '') + '|' + (t.note || '')).join('~')].join('#');
+}
 function renderDash() {
   const sc = document.body.scrollTop;
   $('drange').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (SET.dashRange || '90')));
   DS.w = window.innerWidth;
-  renderDashMain(); renderDashTrades(); renderDashGoals();
+  const D = dashTrades(), key = dashKey(D), onTrades = S.tab === 'trades';
+  if (onTrades) {
+    /* Trades page only shows the list: skip the heavy charts unless there are no trades (empty message lives in dmain) */
+    if (!D.length && DS.mainKey !== key) { renderDashMain(); DS.mainKey = key; }
+    if (DS.listKey !== key || !$('dlist')) { renderDashTrades(); DS.listKey = key; }
+  } else {
+    if (DS.mainKey !== key) { renderDashMain(); DS.mainKey = key; }
+    if (DS.listKey !== key) DS.listKey = null; /* list is hidden here; rebuild when Trades opens */
+  }
+  renderDashGoals();
   document.body.scrollTop = sc;
 }
 
@@ -2503,7 +2614,7 @@ document.addEventListener('click', async e => {
       return;
     }
     DS.arm = null; clearTimeout(DS.t);
-    S.trades = S.trades.filter(t => t.id !== id); render(); await save(); toast('Deleted');
+    S.trades = S.trades.filter(t => t.id !== id); render(); await persist('Deleted');
     return;
   }
   const el = e.target.closest('[data-dact]'); if (!el) return;
@@ -2626,7 +2737,7 @@ $('acRename').onclick = acRename;
 $('acDel').onclick = acDelete;
 $('acList').addEventListener('click', e => { const b = e.target.closest('.acrow'); if (b) acSwitch(b.dataset.acid); });
 
-if (false && 'serviceWorker' in navigator && location.protocol.startsWith('http') &&
+if ('serviceWorker' in navigator && location.protocol.startsWith('http') &&
     !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
@@ -2640,6 +2751,6 @@ $('shGal').addEventListener('click', e => {
 bgInit();
 galInit();
 (async () => {
-  await tsInit(); S.trades = await load(); acLabel(); render(); paintStore();
+  await tsInit(); S.trades = await load(); acLabel(); render(); paintStore(); tsNotify(); if (!(TS.warn && TS.warn.length)) backupNag();
   if (!CAN_ENC) { const i = $('bkPass'); if (i) { i.disabled = true; i.placeholder = 'Needs https'; } }
 })();
