@@ -13,7 +13,7 @@ const cls = n => n > 0 ? 'win' : n < 0 ? 'loss' : '';
 const fixed = (n, d) => Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
 const sgn = n => n > 0 ? '+' : n < 0 ? '\u2212' : '';
 const money = n => (n == null ? '\u2014' : sgn(n) + '$' + fixed(n, 2));
-const px = n => n == null ? '' : String(+n.toFixed(5));
+const px = n => { const v = Number(n); return n == null || !Number.isFinite(v) ? '' : String(+v.toFixed(5)); };
 const pts = n => n == null ? '' : sgn(n) + fixed(n, 1) + ' pts';
 const rtxt = n => n == null ? '\u2014' : sgn(n) + fixed(n, 1) + 'R';
 const pfTxt = st => st.pf == null ? (st.gw > 0 ? '\u221e' : '\u2014') : fixed(st.pf, 2);
@@ -61,7 +61,7 @@ function toast(msg, ms) {
 window.__errlog = [];
 function logErr(kind, e) {
   try {
-    const m = String(e && e.message || e);
+    const m = String((e && (e.name ? e.name + ': ' + (e.message || '') : e.message)) || e);
     if (/ResizeObserver|AbortError|NotAllowedError/.test(m)) return;
     window.__errlog.push({ t: Date.now(), kind, m }); if (window.__errlog.length > 20) window.__errlog.shift();
     console.error(kind, e);
@@ -647,10 +647,10 @@ function render() {
     dashBox.dataset.dt = last;
     $('dtabs').querySelectorAll('[data-dtab]').forEach(b => { const on = b.dataset.dtab === last; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
   }
-  ['journal', 'reports', 'dash', 'sessions', 'appearance', 'data'].forEach(t => { const el = $('s-' + t); if (el) el.hidden = !(S.tab === t || (t === 'dash' && inTrades)); });
+  ['journal', 'reports', 'dash', 'heat', 'sessions', 'appearance', 'data'].forEach(t => { const el = $('s-' + t); if (el) el.hidden = !(S.tab === t || (t === 'dash' && inTrades)); });
   document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-current', b.dataset.v === S.tab ? 'page' : 'false'));
-  $('title').textContent = { journal: 'Dashboard', reports: 'Reports', trades: 'Trades', dash: 'Data', sessions: 'Sessions', appearance: 'Appearance', data: 'Settings' }[S.tab] || 'Vision';
-  $('shareBtn').hidden = S.tab === 'data' || S.tab === 'sessions' || S.tab === 'appearance';
+  $('title').textContent = { journal: 'Dashboard', reports: 'Reports', trades: 'Trades', dash: 'Data', heat: 'Heatmap', sessions: 'Sessions', appearance: 'Appearance', data: 'Settings' }[S.tab] || 'Vision';
+  $('shareBtn').hidden = S.tab === 'data' || S.tab === 'heat' || S.tab === 'sessions' || S.tab === 'appearance';
   movePill();
   renderChips();
   renderDashLimit();
@@ -658,6 +658,7 @@ function render() {
   if (S.tab === 'reports') renderReports();
   if (S.tab === 'dash' || S.tab === 'trades') renderDash();
   if (S.tab === 'appearance') renderAppearance();
+  if (S.tab === 'heat' && window.renderHeat) window.renderHeat();
   if (S.tab === 'data') renderData();
   if (S.tab === 'sessions' && window.sessTick) window.sessTick();
 }
@@ -1080,13 +1081,14 @@ async function clearAll() {
 
 /* ---------- settings: goal, balance, name, hide-$ ---------- */
 const SESS = ['Asia', 'London', 'New York'];
-const SET = { unit: '$', goal: null, balance: null, name: '', hide: false, cardRatio: '43', cardRound: 's', cardStyle: 'term', font: 'default', dashRange: '90', maxLoss: null };
+const SET = { unit: '$', goal: null, balance: null, name: '', hide: false, cardRatio: '43', cardRound: 's', cardStyle: 'term', font: 'figtree', dashRange: '90', maxLoss: null };
 try { const v = JSON.parse(localStorage.getItem('pnl-settings') || 'null'); if (v && typeof v === 'object') Object.assign(SET, v); } catch (e) {}
+SET.font = 'figtree';   /* Figtree is the only font now (old saved Urbanist / IBM Plex Mono choices move to it) */
 function saveSet() { try { localStorage.setItem('pnl-settings', JSON.stringify(SET)); } catch (e) { console.warn('settings not saved', e); } }
-const FONT_IDS = ['default', 'figtree', 'plexmono'];
-const FONT_FACE = { default: 'Urbanist', figtree: 'Figtree', plexmono: 'IBM Plex Mono' };
+const FONT_IDS = ['figtree'];
+const FONT_FACE = { figtree: 'Figtree' };
 function applyFont() {
-    if (FONT_IDS.indexOf(SET.font) < 0) SET.font = 'default';
+    if (FONT_IDS.indexOf(SET.font) < 0) SET.font = 'figtree';
   document.documentElement.setAttribute('data-font', SET.font);
   try { if (FONT_FACE[SET.font] && document.fonts && document.fonts.load) { document.fonts.load('40px "' + FONT_FACE[SET.font] + '"').catch(() => {}); document.fonts.load('italic 40px "' + FONT_FACE[SET.font] + '"').catch(() => {}); } } catch (e) {}
   const g = document.getElementById('fontSeg');
@@ -1180,13 +1182,14 @@ function imgEncode(d, mx, q) {
 }
 async function bgPick(w, file) {
   if (!file) return;
-  if (w === 'card' && /^video\//.test(file.type || '')) return bgPickVideo(file);
+  if (w === 'card' && SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
+  if (w === 'card' && (/^video\//i.test(file.type || '') || /\.(mp4|mov|m4v|webm|ogv|3gp)$/i.test(file.name || ''))) return bgPickVideo(file);
   IMG.touched[w] = true;
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   let d = null;
   try {
     d = await imgDecode(file);
-    const tries = w === 'app' ? [[1280, .8], [1000, .72], [760, .64], [520, .6]] : [[1350, .85], [1000, .75], [760, .66], [520, .6]];
+    const tries = w === 'app' ? [[1280, .8], [1000, .72], [760, .64], [520, .6]] : [[2160, .9], [1800, .86], [1440, .82], [1000, .74], [760, .66], [520, .6]];
     let url = null, where = null, last = null;
     for (const [mx, q] of tries) {
       const u = imgEncode(d, mx, q); if (!u) continue;
@@ -1202,6 +1205,7 @@ async function bgPick(w, file) {
   finally { if (d) d.free(); }
 }
 function bgClear(w) {
+  if (w === 'card' && SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
   IMG.touched[w] = true;
   try { localStorage.removeItem(BGK[w]); } catch (e) {}
   idbDel(BGK[w]).catch(() => {});
@@ -1243,19 +1247,30 @@ async function galAdd(url, d, blob) {
   const t = imgEncode(d, 160, .7); if (!t) return null;
   const id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   GAL.err = null;
-  /* copy the picked video into a plain in-memory Blob first: a File that points at the phone's gallery can fail to be stored */
-  let stored = blob;
-  if (blob) { try { if (blob.arrayBuffer) stored = new Blob([await blob.arrayBuffer()], { type: blob.type || 'video/mp4' }); } catch (e) { stored = blob; } }
+  /* Store video bytes as { buf: ArrayBuffer, type } first so iOS Safari / WebKit PWA IndexedDB never fails with Blob UnknownError */
+  let stored = null, fallbackBlob = null;
+  if (blob) {
+    try {
+      const buf = blob.arrayBuffer ? await blob.arrayBuffer() : await new Response(blob).arrayBuffer();
+      const vtype = blob.type || 'video/mp4';
+      stored = { buf, type: vtype };
+      fallbackBlob = new Blob([buf], { type: vtype });
+    } catch (e) { stored = blob; fallbackBlob = blob; }
+  }
   let lastE = null;
   for (let n = 0; n < 2; n++) {
-    try { await idbPut(galKey(id), url, 20000); if (stored) await idbPut(galKey(id) + '-v', stored, 180000); lastE = null; break; }
-    catch (e) { lastE = e; IMG.db = null; }
+    try {
+      await idbPut(galKey(id), url, 20000);
+      if (stored) await idbPut(galKey(id) + '-v', n === 0 ? stored : (fallbackBlob || stored), 180000);
+      lastE = null; break;
+    } catch (e) { lastE = e; IMG.db = null; }
   }
   if (lastE) { GAL.err = lastE; idbDel(galKey(id)).catch(() => {}); idbDel(galKey(id) + '-v').catch(() => {}); return null; }
   GAL.items.push(blob ? { id, t, v: 1 } : { id, t }); await galSaveIdx(); SET.cardSel = id; saveSet(); galRender();
   return id;
 }
 async function galSelect(id) {
+  if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
   if (!id) { SET.cardSel = null; saveSet(); bgClear('card'); galRender(); return; }
   let url = null; try { url = await idbGet(galKey(id)); } catch (e) {}
   if (typeof url !== 'string' || !url) { toast('Could not load that picture'); return; }
@@ -1266,6 +1281,7 @@ async function galSelect(id) {
   if (it && it.v) vidLoad(id); else { vidDrop(); if (SH.open) shAnim(); }
 }
 async function galDelete(id) {
+  if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
   GAL.items = GAL.items.filter(i => i.id !== id);
   idbDel(galKey(id)).catch(() => {}); idbDel(galKey(id) + '-v').catch(() => {}); await galSaveIdx();
   if (SET.cardSel === id) { SET.cardSel = null; saveSet(); bgClear('card'); } else toast('Picture deleted');
@@ -1274,27 +1290,75 @@ async function galDelete(id) {
 
 /* ---------- video background for the card ---------- */
 const fmtDur = n => { n = Math.max(0, Math.round(n)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
+const isIOSWeb = () => {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /iPad|iPhone|iPod/.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+};
+const isStandalonePWA = () => !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+const isAndroidWebView = () => {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /Android/i.test(ua) && (/; wv\)/i.test(ua) || !!window.VisionInsets);
+};
+function triggerBlobDownload(blob, name, keepMs) {
+  const a = document.createElement('a'), u = URL.createObjectURL(blob);
+  a.href = u; a.download = name; a.rel = 'noopener'; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { try { a.remove(); URL.revokeObjectURL(u); } catch (e) {} }, keepMs || 30000);
+}
+function vidToBlob(b) {
+  if (!b) return null;
+  if (typeof Blob !== 'undefined' && b instanceof Blob) return b;
+  if (b.buf) return new Blob([b.buf], { type: b.type || 'video/mp4' });
+  if (b instanceof ArrayBuffer || ArrayBuffer.isView(b)) return new Blob([b], { type: 'video/mp4' });
+  return null;
+}
 function vidDrop() {
   const v = BG.cardVid; BG.cardVid = null;
   if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {} }
   if (BG.vidUrl) { try { URL.revokeObjectURL(BG.vidUrl); } catch (e) {} BG.vidUrl = null; }
   refreshVidUi();
 }
-function vidMake(blob) {
+function vidMake(blob, existingUrl) {
   return new Promise((res, rej) => {
-    const u = URL.createObjectURL(blob), v = document.createElement('video');
-    v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'auto';
-    v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
-    let done = false;
-    const ok = () => { if (done) return; done = true; res({ v, u }); };
+    const u = existingUrl || URL.createObjectURL(blob), v = document.createElement('video');
+    v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true;
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', '');
+    v.preload = 'auto';
+    /* Keep tiny 2x2 inside viewport at near-zero opacity so iOS Safari / mobile Chrome do not suspend offscreen decoding */
+    v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.001;pointer-events:none;z-index:-1';
+    let done = false, metaTimer = 0;
+    const clean = () => { clearTimeout(tmr); clearTimeout(metaTimer); v.onloadeddata = v.oncanplay = v.onloadedmetadata = v.onerror = null; };
+    const ok = () => { if (done) return; done = true; clean(); res({ v, u }); };
+    const fail = err => { if (done) return; done = true; clean(); try { v.remove(); } catch (e) {} if (!existingUrl) { try { URL.revokeObjectURL(u); } catch (e) {} } rej(err || new Error('video')); };
     v.onloadeddata = ok;
-    v.onerror = () => { if (done) return; done = true; try { URL.revokeObjectURL(u); } catch (e) {} rej(new Error('video')); };
-    setTimeout(() => { if (!done) { done = true; try { URL.revokeObjectURL(u); } catch (e) {} rej(new Error('timeout')); } }, 10000);
+    v.oncanplay = ok;
+    v.onloadedmetadata = () => {
+      metaTimer = setTimeout(() => {
+        if (done) return;
+        if (v.readyState >= 2 && v.videoWidth) { ok(); return; }
+        try {
+          const p = v.play();
+          if (p && p.then) p.then(() => { try { v.pause(); v.currentTime = 0; } catch (e) {} ok(); }).catch(() => { if (v.videoWidth) ok(); });
+        } catch (e) { if (v.videoWidth) ok(); }
+      }, 350);
+    };
+    v.onerror = () => fail(new Error('video'));
+    const tmr = setTimeout(() => { if (v.videoWidth) ok(); else fail(new Error('timeout')); }, 12000);
     document.body.appendChild(v); v.src = u; try { v.load(); } catch (e) {}
   });
 }
+async function vidRefreshEl() {
+  if (!BG.vidUrl) return BG.cardVid;
+  const old = BG.cardVid;
+  try {
+    const m = await vidMake(null, BG.vidUrl);
+    BG.cardVid = m.v;
+    if (old && old !== m.v) { try { old.pause(); old.removeAttribute('src'); old.load(); old.remove(); } catch (e) {} }
+    return m.v;
+  } catch (e) { return old; }
+}
 async function vidPoster(v) {
-  try { v.pause(); v.currentTime = Math.min(0.1, (v.duration || 1) / 2); await new Promise(r => { v.onseeked = r; setTimeout(r, 1500); }); } catch (e) {}
+  try { v.pause(); v.currentTime = Math.min(0.1, (v.duration || 1) / 2); await new Promise(r => { const ok = () => { v.onseeked = null; r(); }; v.onseeked = ok; setTimeout(ok, 1500); }); } catch (e) {}
   return { src: v, w: v.videoWidth, h: v.videoHeight };
 }
 async function bgPickVideo(file) {
@@ -1330,7 +1394,8 @@ async function bgPickVideo(file) {
 }
 async function vidLoad(id) {
   try {
-    const b = await idbGet(galKey(id) + '-v', 60000);
+    const raw = await idbGet(galKey(id) + '-v', 60000);
+    const b = vidToBlob(raw);
     if (!b || SET.cardSel !== id) return;
     const m = await vidMake(b);
     if (SET.cardSel !== id) { try { m.v.remove(); URL.revokeObjectURL(m.u); } catch (x) {} return; }
@@ -1341,105 +1406,563 @@ async function vidLoad(id) {
 }
 function refreshVidUi() {
   const has = !!BG.cardVid, sh = $('shShare'), sv = $('shSaveVid');
-  if (sv) sv.hidden = !has;
-  if (sh) sh.textContent = has ? 'Share video' : 'Share';
+  if (sv) {
+    sv.hidden = !has;
+    if (!SH.rec) {
+      sv.textContent = 'Save video';
+      sv.disabled = !SH.d || !!SH.d.empty;
+    }
+  }
+  if (sh && !SH.rec) sh.textContent = has ? 'Share video' : 'Share';
 }
 /* live preview: redraw the card ~24 times a second while a video is the background */
 function shAnim() {
   cancelAnimationFrame(SH.raf); SH.raf = 0;
   const v = BG.cardVid;
   if (!SH.open || !v) { if (v) { try { v.pause(); } catch (e) {} } return; }
-  try { v.play().catch(() => {}); } catch (e) {}
+  if (!SH.rec) { try { v.play().catch(() => {}); } catch (e) {} }
   let last = 0;
   const step = t => {
     if (!SH.open || !BG.cardVid) return;
-    if (!document.hidden && t - last > (SH.rec ? 30 : (document.documentElement.classList.contains('lite') ? 66 : 41)) && SH.d && !SH.d.empty && BG.cardVid.readyState >= 2) { last = t; drawCard($('shCanvas'), SH.d); }
+    if (!document.hidden && t - last > (SH.rec ? 30 : (document.documentElement.classList.contains('lite') ? 66 : 41)) && SH.d && !SH.d.empty && !SH.fast && (SH.rec || BG.cardVid.readyState >= 2)) {
+      last = t;
+      if (SH.rec && SH.recDraw) SH.recDraw(); else drawCard($('shCanvas'), SH.d, SH.rec ? (SH.recScale || 1) : 1);
+    }
     SH.raf = requestAnimationFrame(step);
   };
   SH.raf = requestAnimationFrame(step);
 }
-const vidExt = m => /mp4/.test(m) ? 'mp4' : 'webm';
+const vidExt = m => /mp4/i.test(m) ? 'mp4' : 'webm';
 /* audio: the video's own sound goes only into the recording (silent on the speaker) */
 const VA = { ctx: null };
+function vidUnlockAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!VA.ctx || VA.ctx.state === 'closed') VA.ctx = new AC();
+    if (VA.ctx.state !== 'running') { const p = VA.ctx.resume(); if (p && p.catch) p.catch(() => {}); }
+  } catch (e) {}
+}
+function vidHasAudio(v) {
+  if (!v) return false;
+  if (typeof v.mozHasAudio === 'boolean') return v.mozHasAudio;
+  if (v.audioTracks && typeof v.audioTracks.length === 'number') return v.audioTracks.length > 0;
+  if (typeof v.webkitAudioDecodedByteCount === 'number' && v.currentTime > 0.2 && v.webkitAudioDecodedByteCount === 0) return false;
+  return true;
+}
 async function vidAudioPrep(v) {
   try {
+    if (!vidHasAudio(v)) return null;
     const AC = window.AudioContext || window.webkitAudioContext;
     let ok = false;
     if (AC) {
       if (!VA.ctx || VA.ctx.state === 'closed') VA.ctx = new AC();
-      if (VA.ctx.state !== 'running') { try { await withTimeout(VA.ctx.resume(), 1500); } catch (e) {} }
+      if (VA.ctx.state !== 'running') { try { await withTimeout(VA.ctx.resume(), 1200); } catch (e) {} }
       ok = VA.ctx.state === 'running';
     }
     if (ok) {
-      if (!v._dest) { v._src = VA.ctx.createMediaElementSource(v); v._dest = VA.ctx.createMediaStreamDestination(); v._src.connect(v._dest); }
-      v.muted = false; v.volume = 1;
-      return v._dest.stream;
+      if (v._src && v._ctx !== VA.ctx) { v = await vidRefreshEl(); if (!v) return null; }
+      if (!v._dest) { v._ctx = VA.ctx; v._src = VA.ctx.createMediaElementSource(v); v._dest = VA.ctx.createMediaStreamDestination(); v._src.connect(v._dest); }
+      const at = v._dest.stream.getAudioTracks();
+      if (at.length) { v.muted = false; v.volume = 1; return v._dest.stream; }
     }
     /* audio graph not available: take the sound straight from the video element (stays silent on the speaker) */
     if (!v._src) {
-      const cs = (v.captureStream || v.mozCaptureStream) ? (v.captureStream || v.mozCaptureStream).call(v) : null;
+      const fn = v.captureStream || v.mozCaptureStream;
+      const cs = fn ? fn.call(v) : null;
       const at = cs ? cs.getAudioTracks() : [];
       if (at.length) return new MediaStream(at);
     }
     return null;
-  } catch (e) { return null; }
+  } catch (e) { try { if (v) v.muted = true; } catch (_) {} return null; }
 }
-async function recordCardVideo(audio) {
+function cardRecScale(maxDim) {
+  const sz = CARD_SIZES[SET.cardRatio] || CARD_SIZES['43'], W = sz[0], H = sz[1];
+  const cap = maxDim || 1440;
+  /* top tier = the full card size (1440x1080 / 1080x1080 / 1440x720, i.e. 1080p class); lower tiers are only fallbacks */
+  if (cap >= 1440) return 1;
+  if (W === H) return (cap >= 1280 ? 1024 : 768) / W;
+  return (cap >= 1280 ? 1280 : 960) / W;
+}
+/* the card text/graphics never change while recording, so draw them once and only redraw the moving video behind them */
+function makeRecDraw(cv, scale) {
+  const fg = document.createElement('canvas');
+  drawCard(fg, SH.d, scale, 'fg');
+  const draw = () => {
+    if (!SH.d) return;
+    drawCard(cv, SH.d, scale, 'bg');
+    const x = cv.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.drawImage(fg, 0, 0);
+  };
+  draw.free = () => { try { fg.width = fg.height = 1; } catch (e) {} };
+  return draw;
+}
+function makeMediaRecorder(stream, hasAudio, vbps) {
+  const cands = hasAudio
+    ? ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.42E028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1.42E028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const sup = cands.filter(t => { try { return !MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(t); } catch (e) { return false; } });
+  const list = sup.length ? sup : [''];
+  for (const mime of list) {
+    const tries = [
+      Object.assign(mime ? { mimeType: mime } : {}, hasAudio ? { videoBitsPerSecond: vbps || 4500000, audioBitsPerSecond: 128000 } : { videoBitsPerSecond: vbps || 4500000 }),
+      mime ? { mimeType: mime } : {}
+    ];
+    for (const opt of tries) {
+      try { return { rec: new MediaRecorder(stream, opt), mime: mime || '' }; } catch (e) {}
+    }
+  }
+  return { rec: new MediaRecorder(stream), mime: '' };
+}
+async function recordCardVideo(audio, maxDim) {
   const cv = $('shCanvas'), v = BG.cardVid;
-  if (!v || !cv.captureStream || !window.MediaRecorder) throw new Error('unsupported');
-  const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-  const mime = types.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; } }) || '';
-  const dur = v.duration && isFinite(v.duration) ? v.duration : 3600;
-  v.loop = false;
-  try { v.pause(); v.currentTime = 0; await new Promise(r => { v.onseeked = r; setTimeout(r, 800); }); } catch (e) {}
-  const stream = cv.captureStream(30), chunks = [];
-  const hasAudio = !!(audio && audio.getAudioTracks().length);
-  if (audio) audio.getAudioTracks().forEach(t => stream.addTrack(t.clone()));
-  const opt = { videoBitsPerSecond: 6000000, audioBitsPerSecond: 128000 }; if (mime) opt.mimeType = mime;
-  const rec = new MediaRecorder(stream, opt);
-  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-  const t0 = Date.now();
-  const tick = setInterval(() => { $('shHint').textContent = 'Recording video... ' + fmtDur((Date.now() - t0) / 1000) + (v.duration && isFinite(v.duration) ? ' / ' + fmtDur(dur) : ''); }, 400);
-  SH.stop = false;
+  if (!v || !SH.d || SH.d.empty || !cv || !cv.captureStream || !window.MediaRecorder) throw new Error('unsupported');
+  const recScale = cardRecScale(maxDim || 1440);
+  SH.recScale = recScale;
+  drawCard(cv, SH.d, recScale);
+  const rawDur = v.duration && isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+  const dur = rawDur ? Math.min(rawDur, 90) : 12;
+  let cStream = null, stream = null, tick = 0, drawIv = 0, recObj = null, t0 = Date.now(), recDraw = null;
+  const chunks = [];
+  const hasAudio = !!(audio && audio.getAudioTracks && audio.getAudioTracks().some(t => t.readyState !== 'ended'));
   try {
+    v.loop = false;
+    if (!hasAudio) v.muted = true;
+    try {
+      v.pause();
+      if (v.currentTime > 0.02) {
+        v.currentTime = 0;
+        await new Promise(r => { const ok = () => { v.onseeked = null; r(); }; v.onseeked = ok; setTimeout(ok, 700); });
+      }
+    } catch (e) {}
+    recDraw = makeRecDraw(cv, recScale); SH.recDraw = recDraw; recDraw();
+    cStream = cv.captureStream(30);
+    const tracks = cStream.getVideoTracks().slice();
+    if (hasAudio) audio.getAudioTracks().forEach(t => { try { if (t.readyState !== 'ended') tracks.push(t.clone()); } catch (e) {} });
+    stream = new MediaStream(tracks);
+    recObj = makeMediaRecorder(stream, hasAudio, (maxDim || 1440) >= 1440 ? 12000000 : (maxDim || 1440) >= 1280 ? 6000000 : 3000000);
+    const rec = recObj.rec;
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    t0 = Date.now();
+    tick = setInterval(() => {
+      $('shHint').textContent = 'Recording video... ' + fmtDur((Date.now() - t0) / 1000) + (rawDur ? ' / ' + fmtDur(dur) : '');
+    }, 400);
+    shAnim();
+    drawIv = setInterval(() => { if (SH.open && SH.rec && SH.d && !SH.d.empty) recDraw(); }, 33);
     await new Promise((res, rej) => {
       let ended = false;
-      const fin = () => { if (ended) return; ended = true; clearTimeout(guard); clearInterval(chk); clearInterval(wd); v.removeEventListener('ended', fin); try { if (rec.state !== 'inactive') rec.stop(); } catch (e) { res(); } };
-      rec.onstop = res; rec.onerror = () => rej(new Error('rec'));
+      const fin = err => {
+        if (ended) return; ended = true;
+        clearTimeout(guard); clearInterval(chk); clearInterval(wd);
+        v.removeEventListener('ended', onEnd);
+        if (err) { rec.onstop = null; rec.ondataavailable = null; rej(err); try { if (rec.state !== 'inactive') rec.stop(); } catch (e) {} return; }
+        try { if (rec.state !== 'inactive') rec.stop(); else res(); } catch (e) { res(); }
+      };
+      const onEnd = () => fin(null);
+      rec.onstop = () => res();
+      rec.onerror = ev => fin((ev && ev.error) || new Error('rec'));
       let lastT = -1, stuck = 0;
-      const guard = setTimeout(fin, dur * 1000 + 4000), chk = setInterval(() => { if (SH.stop) fin(); }, 200);
-      /* if the video stops moving, nudge it; give up only after ~6 s of nothing */
+      const guard = setTimeout(() => fin(null), dur * 1000 + 2500), chk = setInterval(() => { if (SH.stop || SH.aborted) fin(null); }, 150);
       const wd = setInterval(() => {
-        if (v.ended) return;
-        if (Math.abs(v.currentTime - lastT) < 0.01) { stuck++; try { v.play().catch(() => {}); } catch (e) {} } else stuck = 0;
+        if (v.ended) { fin(null); return; }
+        if (rawDur && v.currentTime >= dur - 0.04) { fin(null); return; }
+        if (Math.abs(v.currentTime - lastT) < 0.01) {
+          stuck++;
+          try {
+            const p = v.play();
+            if (p && p.catch) p.catch(() => { v.muted = true; try { v.play().catch(() => {}); } catch (_) {} });
+          } catch (e) {}
+        } else stuck = 0;
         lastT = v.currentTime;
-        if (stuck >= 12) fin();
-      }, 500);
-      v.addEventListener('ended', fin);
-      rec.start(1000);
-      v.play().catch(() => {});
+        if (stuck >= 10) fin(new Error('stuck'));
+      }, 450);
+      v.addEventListener('ended', onEnd);
+      const actualMime = rec.mimeType || recObj.mime || '';
+      if (/mp4/i.test(actualMime)) rec.start(); else rec.start(1000);
+      recDraw();
+      (async () => {
+        try { await v.play(); }
+        catch (e) { v.muted = true; try { await v.play(); } catch (e2) {} }
+      })();
     });
   } finally {
-    clearInterval(tick); stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
-    v.loop = true; v.muted = true; try { v.play().catch(() => {}); } catch (e) {}
+    clearInterval(tick); clearInterval(drawIv);
+    SH.recDraw = null; if (recDraw) recDraw.free();
+    SH.recScale = 1;
+    if (stream) stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    if (cStream) cStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    if (BG.cardVid) { BG.cardVid.loop = true; BG.cardVid.muted = true; if (SH.open) { try { BG.cardVid.play().catch(() => {}); } catch (e) {} } }
     $('shHint').textContent = '';
   }
-  const type = rec.mimeType || mime || 'video/webm';
+  if (SH.aborted) throw new Error('aborted');
+  const type = (recObj && recObj.rec && recObj.rec.mimeType) || (recObj && recObj.mime) || 'video/mp4';
   const blob = new Blob(chunks, { type });
   if (!blob.size) throw new Error('empty');
-  return { blob, name: 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today() + '.' + vidExt(type), type, secs: (Date.now() - t0) / 1000, hasAudio };
+  return { blob, name: 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today() + '.' + vidExt(type), type, secs: (Date.now() - t0) / 1000, hasAudio: hasAudio && !v.muted };
+}
+/* ---------- MP4 demux / mux (no libraries): used by the fast video export ---------- */
+function mp4Kids(dv, s, e) {
+  const out = [];
+  while (s + 8 <= e) {
+    let size = dv.getUint32(s), hdr = 8;
+    const type = String.fromCharCode(dv.getUint8(s + 4), dv.getUint8(s + 5), dv.getUint8(s + 6), dv.getUint8(s + 7));
+    if (size === 1) { if (s + 16 > e) break; size = dv.getUint32(s + 8) * 4294967296 + dv.getUint32(s + 12); hdr = 16; }
+    else if (size === 0) size = e - s;
+    if (s + size > e) size = e - s;
+    if (size < hdr) break;
+    out.push({ type, s: s + hdr, e: s + size });
+    s += size;
+  }
+  return out;
+}
+const mp4Find = (dv, box, type) => mp4Kids(dv, box.s, box.e).find(k => k.type === type);
+function mp4Esds(dv, buf, box) {
+  try {
+    let p = box.s + 4; const end = box.e;
+    const len = () => { let l = 0, b; do { b = dv.getUint8(p++); l = (l << 7) | (b & 127); } while ((b & 128) && p < end); return l; };
+    if (dv.getUint8(p++) !== 3) return null; len(); p += 2;
+    const fl = dv.getUint8(p++); if (fl & 0x80) p += 2; if (fl & 0x40) p += 1 + dv.getUint8(p); if (fl & 0x20) p += 2;
+    if (dv.getUint8(p++) !== 4) return null; len();
+    if (dv.getUint8(p) !== 0x40) return null;
+    p += 13;
+    if (dv.getUint8(p++) !== 5) return null;
+    const l = len();
+    return new Uint8Array(buf.slice(p, p + l));
+  } catch (e) { return null; }
+}
+/* returns [{ kind:'vide'|'soun', timescale, n, off[], size[], dts[], cts[], dur[], key[], ... }] ; throws when the file is not a plain (non-fragmented) MP4/MOV */
+function mp4Demux(buf) {
+  const dv = new DataView(buf);
+  const moov = mp4Kids(dv, 0, buf.byteLength).find(b => b.type === 'moov');
+  if (!moov) throw new Error('nomoov');
+  const tracks = [];
+  for (const trak of mp4Kids(dv, moov.s, moov.e).filter(b => b.type === 'trak')) {
+    const mdia = mp4Find(dv, trak, 'mdia'); if (!mdia) continue;
+    const hdlr = mp4Find(dv, mdia, 'hdlr'), mdhd = mp4Find(dv, mdia, 'mdhd'), minf = mp4Find(dv, mdia, 'minf'), tkhd = mp4Find(dv, trak, 'tkhd');
+    if (!hdlr || !mdhd || !minf) continue;
+    const kind = String.fromCharCode(dv.getUint8(hdlr.s + 8), dv.getUint8(hdlr.s + 9), dv.getUint8(hdlr.s + 10), dv.getUint8(hdlr.s + 11));
+    if (kind !== 'vide' && kind !== 'soun') continue;
+    const stbl = mp4Find(dv, minf, 'stbl'); if (!stbl) continue;
+    const timescale = dv.getUint32(mdhd.s + (dv.getUint8(mdhd.s) === 1 ? 20 : 12));
+    const st = {}; mp4Kids(dv, stbl.s, stbl.e).forEach(k => { st[k.type] = k; });
+    if (!st.stsd || !st.stts || !st.stsz || !st.stsc || !(st.stco || st.co64)) continue;
+    const T = { kind, timescale, rot: 0 };
+    if (tkhd) {
+      const base = dv.getUint8(tkhd.s) === 1 ? 52 : 40;
+      T.rot = ((Math.round(Math.atan2(dv.getInt32(tkhd.s + base + 4), dv.getInt32(tkhd.s + base)) * 180 / Math.PI) % 360) + 360) % 360;
+    }
+    const entry = mp4Kids(dv, st.stsd.s + 8, st.stsd.e)[0]; if (!entry) continue;
+    T.fourcc = entry.type;
+    if (kind === 'vide') {
+      T.w = dv.getUint16(entry.s + 24); T.h = dv.getUint16(entry.s + 26);
+      const c = mp4Kids(dv, entry.s + 78, entry.e).find(k => k.type === 'avcC');
+      if (c && /^avc[13]$/.test(entry.type)) T.avcC = new Uint8Array(buf.slice(c.s, c.e));
+    } else {
+      const ver = dv.getUint16(entry.s + 8);
+      if (ver <= 1) {
+        T.ch = dv.getUint16(entry.s + 16); T.sr = dv.getUint16(entry.s + 24);
+        const e2 = mp4Kids(dv, entry.s + 28 + (ver === 1 ? 16 : 0), entry.e).find(k => k.type === 'esds');
+        if (e2 && entry.type === 'mp4a') T.asc = mp4Esds(dv, buf, e2);
+      }
+    }
+    const n = dv.getUint32(st.stsz.s + 8), fixed = dv.getUint32(st.stsz.s + 4);
+    const size = new Array(n); for (let i = 0; i < n; i++) size[i] = fixed || dv.getUint32(st.stsz.s + 12 + i * 4);
+    const sc = []; { const c = dv.getUint32(st.stsc.s + 4); for (let i = 0; i < c; i++) sc.push([dv.getUint32(st.stsc.s + 8 + i * 12), dv.getUint32(st.stsc.s + 12 + i * 12)]); }
+    const co = []; if (st.stco) { const c = dv.getUint32(st.stco.s + 4); for (let i = 0; i < c; i++) co.push(dv.getUint32(st.stco.s + 8 + i * 4)); }
+    else { const c = dv.getUint32(st.co64.s + 4); for (let i = 0; i < c; i++) co.push(dv.getUint32(st.co64.s + 8 + i * 8) * 4294967296 + dv.getUint32(st.co64.s + 12 + i * 8)); }
+    const off = new Array(n); let si = 0, r = 0;
+    for (let c = 0; c < co.length && si < n; c++) {
+      while (r + 1 < sc.length && sc[r + 1][0] <= c + 1) r++;
+      let o = co[c];
+      for (let j = 0; j < sc[r][1] && si < n; j++) { off[si] = o; o += size[si]; si++; }
+    }
+    if (si < n) continue;
+    const dts = new Array(n), dur = new Array(n); si = 0; let t = 0;
+    { const c = dv.getUint32(st.stts.s + 4); for (let i = 0; i < c && si < n; i++) { const cnt = dv.getUint32(st.stts.s + 8 + i * 8), d = dv.getUint32(st.stts.s + 12 + i * 8); for (let j = 0; j < cnt && si < n; j++) { dts[si] = t; dur[si] = d; t += d; si++; } } }
+    if (si < n) continue;
+    const cts = dts.slice();
+    if (st.ctts) { si = 0; const c = dv.getUint32(st.ctts.s + 4); for (let i = 0; i < c && si < n; i++) { const cnt = dv.getUint32(st.ctts.s + 8 + i * 8), o = dv.getInt32(st.ctts.s + 12 + i * 8); for (let j = 0; j < cnt && si < n; j++) { cts[si] += o; si++; } } }
+    const key = new Array(n).fill(!st.stss);
+    if (st.stss) { const c = dv.getUint32(st.stss.s + 4); for (let i = 0; i < c; i++) { const k = dv.getUint32(st.stss.s + 8 + i * 4) - 1; if (k >= 0 && k < n) key[k] = true; } }
+    Object.assign(T, { n, off, size, dts, cts, dur, key });
+    tracks.push(T);
+  }
+  return tracks;
+}
+/* V = { w, h, desc:Uint8Array(avcC), s:[{d:Uint8Array, ts:us, key}], frameUs } ; A = null | { ch, sr, asc:Uint8Array, timescale, s:[{d:Uint8Array, dur}] }  ->  Blob (moov first, so it streams/shares cleanly) */
+function mp4Mux(V, A) {
+  const te = new TextEncoder();
+  const cat = (...a) => { let n = 0; a.forEach(x => { n += x.length; }); const o = new Uint8Array(n); let p = 0; a.forEach(x => { o.set(x, p); p += x.length; }); return o; };
+  const u8 = (...v) => Uint8Array.from(v);
+  const u16 = n => u8((n >> 8) & 255, n & 255);
+  const u32 = n => u8((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+  const u32s = arr => { const o = new Uint8Array(arr.length * 4), d = new DataView(o.buffer); arr.forEach((v, i) => d.setUint32(i * 4, v >>> 0)); return o; };
+  const zeros = n => new Uint8Array(n);
+  const box = (t, ...c) => { const p = cat(...c); return cat(u32(8 + p.length), te.encode(t), p); };
+  const full = (t, ver, flags, ...c) => box(t, u8(ver, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255), ...c);
+  const MAT = cat(u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000));
+  const ct = Math.floor(Date.now() / 1000) + 2082844800;
+  const ticks = us => Math.round(us * 0.09);
+  /* video samples: 90 kHz timeline */
+  const vs = V.s.map((x, i) => ({ d: x.d, key: x.key, t: ticks(x.ts) }));
+  vs.forEach((x, i) => { x.dur = i + 1 < vs.length ? vs[i + 1].t - x.t : ticks(V.frameUs); if (x.dur < 1) x.dur = 1; });
+  const vDur = vs.reduce((a, x) => a + x.dur, 0);
+  const VT = { id: 1, kind: 'vide', ts: 90000, dur: vDur, samples: vs };
+  const tr = [VT];
+  let AT = null;
+  if (A && A.s.length) { AT = { id: 2, kind: 'soun', ts: A.timescale, dur: A.s.reduce((a, x) => a + x.dur, 0), samples: A.s }; tr.push(AT); }
+  /* interleave in ~1 second chunks */
+  const order = []; VT.chunks = []; if (AT) AT.chunks = [];
+  { let vi = 0, ai = 0, aT = 0;
+    for (let g = 1; (vi < vs.length || (AT && ai < AT.samples.length)) && g < 100000; g++) {
+      const lim = g * 90000; let n = 0;
+      while (vi + n < vs.length && vs[vi + n].t < lim) n++;
+      if (n) { const c = { i0: vi, n }; VT.chunks.push(c); order.push([VT, c]); vi += n; }
+      if (AT) { let m = 0, t = aT; while (ai + m < AT.samples.length && t * 90000 / AT.ts < lim) { t += AT.samples[ai + m].dur; m++; } if (m) { const c = { i0: ai, n: m }; AT.chunks.push(c); order.push([AT, c]); ai += m; aT = t; } }
+    } }
+  let rel = 0; const parts = [];
+  order.forEach(([T, c]) => { c.rel = rel; for (let i = 0; i < c.n; i++) { const d = T.samples[c.i0 + i].d; parts.push(d); rel += d.length; } });
+  const mdatLen = rel;
+  const runs = (arr, f) => { const r = []; arr.forEach(x => { const v = f(x), l = r[r.length - 1]; if (l && l[1] === v) l[0]++; else r.push([1, v]); }); return r; };
+  const stblOf = (T, base) => {
+    let entry;
+    if (T.kind === 'vide') entry = box('avc1', zeros(6), u16(1), u16(0), u16(0), zeros(12), u16(V.w), u16(V.h), u32(0x480000), u32(0x480000), u32(0), u16(1), zeros(32), u16(0x18), u16(0xffff), box('avcC', V.desc));
+    else {
+      const dsi = cat(u8(5, A.asc.length), A.asc);
+      const dcd = cat(u8(4, 13 + dsi.length, 0x40, 0x15), u8(0, 0, 0), u32(128000), u32(128000), dsi);
+      const slc = u8(6, 1, 2);
+      const esd = cat(u8(3, 3 + dcd.length + slc.length), u16(2), u8(0), dcd, slc);
+      entry = box('mp4a', zeros(6), u16(1), u16(0), u16(0), u32(0), u16(A.ch), u16(16), u16(0), u16(0), u32((A.sr * 65536) >>> 0), full('esds', 0, 0, esd));
+    }
+    const sttsR = runs(T.samples, x => x.dur);
+    const scR = []; T.chunks.forEach((c, i) => { const l = scR[scR.length - 1]; if (!l || l[1] !== c.n) scR.push([i + 1, c.n]); });
+    const kids = [full('stsd', 0, 0, u32(1), entry), full('stts', 0, 0, u32(sttsR.length), ...sttsR.map(r => cat(u32(r[0]), u32(r[1]))))];
+    if (T.kind === 'vide') { const k = []; T.samples.forEach((x, i) => { if (x.key) k.push(i + 1); }); kids.push(full('stss', 0, 0, u32(k.length), u32s(k))); }
+    kids.push(full('stsc', 0, 0, u32(scR.length), ...scR.map(r => cat(u32(r[0]), u32(r[1]), u32(1)))));
+    kids.push(full('stsz', 0, 0, u32(0), u32(T.samples.length), u32s(T.samples.map(x => x.d.length))));
+    kids.push(full('stco', 0, 0, u32(T.chunks.length), u32s(T.chunks.map(c => base + c.rel))));
+    return box('stbl', ...kids);
+  };
+  const moovFor = base => {
+    const movDur = Math.max(...tr.map(T => Math.round(T.dur * 1000 / T.ts)));
+    const traks = tr.map(T => {
+      const dMov = Math.round(T.dur * 1000 / T.ts), v = T.kind === 'vide';
+      return box('trak',
+        full('tkhd', 0, 3, u32(ct), u32(ct), u32(T.id), u32(0), u32(dMov), zeros(8), u16(0), u16(0), u16(v ? 0 : 0x100), u16(0), MAT, u32(v ? V.w * 65536 : 0), u32(v ? V.h * 65536 : 0)),
+        box('mdia',
+          full('mdhd', 0, 0, u32(ct), u32(ct), u32(T.ts), u32(T.dur), u16(0x55c4), u16(0)),
+          full('hdlr', 0, 0, u32(0), te.encode(v ? 'vide' : 'soun'), zeros(12), te.encode(v ? 'VideoHandler\0' : 'SoundHandler\0')),
+          box('minf', v ? full('vmhd', 0, 1, zeros(8)) : full('smhd', 0, 0, u16(0), u16(0)),
+            box('dinf', full('dref', 0, 0, u32(1), full('url ', 0, 1))),
+            stblOf(T, base))));
+    });
+    return box('moov', full('mvhd', 0, 0, u32(ct), u32(ct), u32(1000), u32(movDur), u32(0x10000), u16(0x100), zeros(10), MAT, zeros(24), u32(tr.length + 1)), ...traks);
+  };
+  const ftyp = box('ftyp', te.encode('isom'), u32(512), te.encode('isom'), te.encode('iso2'), te.encode('avc1'), te.encode('mp41'));
+  let moov = moovFor(0);
+  moov = moovFor(ftyp.length + moov.length + 8);
+  return new Blob([ftyp, moov, u32(8 + mdatLen), te.encode('mdat'), ...parts], { type: 'video/mp4' });
+}
+
+/* ---------- fast video export: decode the background (WebCodecs) -> draw the card -> encode H.264 -> mux MP4, all faster than real time ---------- */
+async function fastExportCardVideo() {
+  if (!(window.VideoEncoder && window.VideoDecoder && window.EncodedVideoChunk && window.VideoFrame) || !BG.vidUrl || !SH.d || SH.d.empty) return null;
+  let buf;
+  try { buf = await (await fetch(BG.vidUrl)).arrayBuffer(); } catch (e) { return null; }
+  let tracks;
+  try { tracks = mp4Demux(buf); } catch (e) { return null; }
+  const vt = tracks.find(t => t.kind === 'vide'), at = tracks.find(t => t.kind === 'soun');
+  if (!vt || !vt.avcC || !vt.n) return null;          /* not an H.264 MP4/MOV: use the real-time recorder */
+  if (at && !at.asc) return null;                      /* sound we cannot copy as-is (not AAC): real-time recorder keeps the sound */
+  if (vt.avcC.length < 4) return null;
+  const hx = n => (n < 16 ? '0' : '') + n.toString(16);
+  const dcfg = { codec: 'avc1.' + hx(vt.avcC[1]) + hx(vt.avcC[2]) + hx(vt.avcC[3]), description: vt.avcC, optimizeForLatency: true };
+  try { const ds = await VideoDecoder.isConfigSupported(dcfg); if (!ds || !ds.supported) return null; } catch (e) { return null; }
+  let srcDur = 0; for (let i = 0; i < vt.n; i++) srcDur = Math.max(srcDur, (vt.cts[i] + vt.dur[i]) / vt.timescale);
+  const durCap = Math.min(srcDur || 12, 90);
+  const durUs = Math.round(durCap * 1e6);
+  const sz = CARD_SIZES[SET.cardRatio] || CARD_SIZES['43'];
+  const rot = vt.rot, swap = rot === 90 || rot === 270;
+  const FPS = 30, FUS = Math.round(1e6 / FPS);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const t0 = Date.now();
+  const hint = $('shHint');
+  let v0 = BG.cardVid;
+  if (v0) { try { v0.pause(); } catch (e) {} }
+  SH.fast = true;
+  try {
+    for (const cap of [1440, 1280, 960]) {
+      const scale = cardRecScale(cap), pw = Math.round(sz[0] * scale), ph = Math.round(sz[1] * scale);
+      if ((pw & 1) || (ph & 1)) continue;
+      const bitrate = cap >= 1440 ? (durCap > 40 ? 8e6 : 12e6) : cap >= 1280 ? 6e6 : 3e6;
+      for (const codec of ['avc1.640028', 'avc1.4D0028', 'avc1.42E028']) {
+        const ecfg = { codec, width: pw, height: ph, bitrate, framerate: FPS, avc: { format: 'avc' } };
+        try { const es = await VideoEncoder.isConfigSupported(ecfg); if (!es || !es.supported) continue; } catch (e) { continue; }
+        let r = null;
+        try { r = await fxRun(ecfg, scale, vt, at, buf, durUs, rot, swap, FUS, hint, sleep, t0); }
+        catch (e) { if (SH.aborted) throw e; r = null; try { console.warn('fast export failed', codec, cap, e); } catch (_) {} }
+        if (r) return r;
+      }
+    }
+    return null;
+  } finally {
+    SH.fast = false; BG.fastFrame = null;
+    if (hint) hint.textContent = '';
+    const v = BG.cardVid;
+    if (v) { v.loop = true; v.muted = true; if (SH.open) { try { v.play().catch(() => {}); } catch (e) {} } }
+  }
+}
+async function fxRun(ecfg, scale, vt, at, buf, durUs, rot, swap, FUS, hint, sleep, t0) {
+  const oc = document.createElement('canvas');
+  const draw = makeRecDraw(oc, scale);
+  const vOut = []; let vdesc = null, encErr = null, decErr = null;
+  const enc = new VideoEncoder({
+    output: (ch, meta) => {
+      const d = new Uint8Array(ch.byteLength); ch.copyTo(d);
+      vOut.push({ d, ts: ch.timestamp, key: ch.type === 'key' });
+      const dc = meta && meta.decoderConfig && meta.decoderConfig.description;
+      if (dc && !vdesc) vdesc = dc instanceof ArrayBuffer ? new Uint8Array(dc.slice(0)) : new Uint8Array(dc.buffer.slice(dc.byteOffset, dc.byteOffset + dc.byteLength));
+    },
+    error: e => { encErr = e || new Error('enc'); }
+  });
+  let dec = null;
+  try {
+    enc.configure(ecfg);
+    let firstPts = null, nextT = 0, outN = 0;
+    dec = new VideoDecoder({
+      output: fr => {
+        try {
+          if (encErr || SH.aborted) return;
+          const pts = fr.timestamp;
+          if (firstPts === null) firstPts = pts;
+          const rel = pts - firstPts;
+          if (rel < 0 || rel > durUs || rel + 4000 < nextT) return;
+          nextT = Math.max(nextT + FUS, rel + FUS - 4000);
+          const cw = fr.displayWidth || fr.codedWidth, ch = fr.displayHeight || fr.codedHeight;
+          BG.fastFrame = { src: fr, cw, ch, dw: swap ? ch : cw, dh: swap ? cw : ch, rot };
+          draw();
+          const vf = new VideoFrame(oc, { timestamp: rel, duration: FUS });
+          try { enc.encode(vf, { keyFrame: outN % 60 === 0 }); } finally { vf.close(); }
+          outN++;
+        } catch (e) { if (!decErr) decErr = e; }
+        finally { BG.fastFrame = null; try { fr.close(); } catch (e) {} }
+      },
+      error: e => { decErr = e || new Error('dec'); }
+    });
+    dec.configure({ codec: 'avc1.' + [1, 2, 3].map(i => (vt.avcC[i] < 16 ? '0' : '') + vt.avcC[i].toString(16)).join(''), description: vt.avcC, optimizeForLatency: true });
+    let stopped = false;
+    for (let i = 0; i < vt.n; i++) {
+      if (SH.aborted) throw new Error('aborted');
+      if (SH.stop) { stopped = true; break; }
+      if (vt.dts[i] / vt.timescale > durUs / 1e6 + 1) break;
+      dec.decode(new EncodedVideoChunk({ type: vt.key[i] ? 'key' : 'delta', timestamp: Math.round(vt.cts[i] * 1e6 / vt.timescale), duration: Math.round(vt.dur[i] * 1e6 / vt.timescale), data: new Uint8Array(buf, vt.off[i], vt.size[i]) }));
+      let spin = 0;
+      while (dec.decodeQueueSize > 4 || enc.encodeQueueSize > 4) { await sleep(2); if (decErr || encErr || SH.aborted || ++spin > 5000) break; }
+      if (decErr || encErr) throw decErr || encErr;
+      if (i % 8 === 0) { if (hint) hint.textContent = 'Exporting video... ' + Math.min(99, Math.round(vt.dts[i] / vt.timescale / (durUs / 1e6) * 100)) + '%'; await sleep(0); }
+    }
+    if (SH.aborted) throw new Error('aborted');
+    await dec.flush();
+    if (decErr) throw decErr;
+    await enc.flush();
+    if (encErr) throw encErr;
+    if (!vOut.length || !vdesc) throw new Error('noframes');
+    for (let i = 1; i < vOut.length; i++) if (vOut[i].ts < vOut[i - 1].ts) throw new Error('reorder');
+    const outUs = vOut[vOut.length - 1].ts + FUS;
+    let A = null;
+    if (at && at.n) {
+      A = { ch: at.ch || 2, sr: at.sr || 44100, asc: at.asc, timescale: at.timescale, s: [] };
+      let t = 0;
+      for (let i = 0; i < at.n && t * 1e6 / at.timescale < outUs; i++) { A.s.push({ d: new Uint8Array(buf, at.off[i], at.size[i]), dur: at.dur[i] }); t += at.dur[i]; }
+      if (!A.s.length) A = null;
+    }
+    const blob = mp4Mux({ w: ecfg.width, h: ecfg.height, desc: vdesc, s: vOut, frameUs: FUS }, A);
+    if (!blob.size) throw new Error('empty');
+    return { blob, name: 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today() + '.mp4', type: 'video/mp4', secs: outUs / 1e6, hasAudio: !!A, fastSecs: (Date.now() - t0) / 1000 };
+  } finally {
+    try { if (dec && dec.state !== 'closed') dec.close(); } catch (e) {}
+    try { if (enc.state !== 'closed') enc.close(); } catch (e) {}
+    draw.free(); try { oc.width = oc.height = 1; } catch (e) {}
+  }
+}
+
+function showVideoReady(r, mode, file, canShare) {
+  const old = $('vidReadyOv'); if (old) { try { old._close(); } catch (e) { old.remove(); } }
+  const u = URL.createObjectURL(r.blob);
+  const ov = document.createElement('div');
+  ov.id = 'vidReadyOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(6,8,12,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px';
+  const box = document.createElement('div');
+  box.style.cssText = 'width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:12px';
+  const ttl = document.createElement('div');
+  ttl.textContent = 'Video P&L card ready (' + fmtDur(r.secs) + ')';
+  ttl.style.cssText = 'color:#F2F5FA;font:600 15px/1.35 system-ui,-apple-system,sans-serif;text-align:center';
+  const pv = document.createElement('video');
+  pv.src = u; pv.loop = true; pv.muted = true; pv.playsInline = true; pv.controls = true; pv.autoplay = true;
+  pv.setAttribute('playsinline', ''); pv.setAttribute('webkit-playsinline', '');
+  pv.style.cssText = 'width:100%;max-height:54vh;border-radius:14px;background:#000;box-shadow:0 16px 40px rgba(0,0,0,.55)';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;width:100%;justify-content:center;flex-wrap:wrap;margin-top:4px';
+  const close = () => { try { pv.pause(); pv.removeAttribute('src'); pv.load(); URL.revokeObjectURL(u); } catch (e) {} ov.remove(); };
+  ov._close = close;
+  const btnCss = primary => 'flex:1;min-width:130px;padding:12px 16px;border-radius:12px;border:' + (primary ? '0' : '1px solid rgba(255,255,255,.18)') + ';background:' + (primary ? '#2AD89A' : 'rgba(255,255,255,.08)') + ';color:' + (primary ? '#06130E' : '#F2F5FA') + ';font:600 14px/1.2 system-ui,-apple-system,sans-serif;cursor:pointer';
+  if (canShare && file) {
+    const sb = document.createElement('button');
+    sb.type = 'button';
+    sb.textContent = mode === 'save' && isIOSWeb() ? 'Save / Share video' : 'Share video';
+    sb.style.cssText = btnCss(true);
+    sb.onclick = async () => {
+      try { await navigator.share({ files: [file], title: r.name }); close(); }
+      catch (e) { if (!errCancel(e)) { triggerBlobDownload(r.blob, r.name, 30000); toast('Video downloaded'); close(); } }
+    };
+    row.appendChild(sb);
+  }
+  const db = document.createElement('button');
+  db.type = 'button';
+  db.textContent = 'Download';
+  db.style.cssText = btnCss(!canShare);
+  db.onclick = () => { triggerBlobDownload(r.blob, r.name, 30000); toast('Video downloaded'); close(); };
+  row.appendChild(db);
+  const cb = document.createElement('button');
+  cb.type = 'button';
+  cb.textContent = 'Close';
+  cb.style.cssText = 'padding:10px 18px;border-radius:10px;border:0;background:transparent;color:rgba(242,245,250,.7);font:500 13px/1.2 system-ui,-apple-system,sans-serif;cursor:pointer';
+  cb.onclick = close;
+  box.appendChild(ttl); box.appendChild(pv); box.appendChild(row); box.appendChild(cb);
+  ov.appendChild(box);
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  document.body.appendChild(ov);
+  try { pv.play().catch(() => {}); } catch (e) {}
 }
 const blobB64 = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => { const d = String(fr.result), i = d.indexOf(';base64,'); res(i >= 0 ? d.slice(i + 8) : d.slice(d.lastIndexOf(',') + 1)); }; fr.onerror = () => rej(fr.error); fr.readAsDataURL(b); });
 async function videoOut(mode) {
-  if (SH.rec) { SH.stop = true; return; }
-  SH.rec = true;
-  const audio = BG.cardVid ? await vidAudioPrep(BG.cardVid) : null;
+  if (SH.rec) { if (Date.now() - (SH.recAt || 0) > 900) SH.stop = true; return; }
+  if (!SH.d || SH.d.empty || !BG.cardVid) return;
+  vidUnlockAudio();
+  SH.rec = true; SH.stop = false; SH.aborted = false; SH.recAt = Date.now();
   ['shShare', 'shSave'].forEach(i => { $(i).disabled = true; });
-  $('shSaveVid').textContent = mode === 'share' ? 'Preparing video...' : 'Saving video...'; $('shSaveVid').disabled = true;   /* records the whole video by itself, no stop button */
+  $('shSaveVid').textContent = 'Stop recording'; $('shSaveVid').disabled = false;
   try {
-    let r;
-    try { r = await recordCardVideo(audio); } catch (e) { toast('This phone cannot record video here. Saving the picture instead.'); SH.rec = false; await (mode === 'share' ? shareCardImg() : saveCard()); return; }
-    if (r.secs < 1.5) toast('The recording was very short - the video may not have played. Try again.');
+    let r = null;
+    try { r = await fastExportCardVideo(); } catch (e0) { if (SH.aborted) return; r = null; }
+    const audio = (!r && BG.cardVid) ? await vidAudioPrep(BG.cardVid) : null;
+    const tiers = [[audio, 1440], [audio, 1280], [null, 960]];
+    for (let i = 0; i < tiers.length && !r; i++) {
+      try { r = await recordCardVideo(tiers[i][0], tiers[i][1]); }
+      catch (e1) {
+        if (SH.aborted) return;
+        if (i === tiers.length - 1) {
+          toast('This phone cannot record video here. Saving the picture instead.');
+          SH.rec = false;
+          await (mode === 'share' ? shareCardImg() : saveCard());
+          return;
+        }
+        if (!tiers[i + 1][0] && BG.cardVid && BG.cardVid._src) await vidRefreshEl();
+      }
+    }
+    if (SH.aborted || !r) return;
+    if (r.secs < 1.2 && !SH.stop) toast('The recording was very short - the video may not have played. Try again.');
     if (isNative()) {
       const P = window.Capacitor.Plugins;
       try {
@@ -1452,8 +1975,7 @@ async function videoOut(mode) {
         if (mode === 'save' && P.Filesystem) {
           try { if (P.Filesystem.requestPermissions) await P.Filesystem.requestPermissions(); } catch (e) {}
           let werr = null;
-          for (const dir of ['DOCUMENTS', 'DOCUMENTS', 'EXTERNAL']) { try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + r.name, data, directory: dir, recursive: true }); toast('Video saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal') + ' \u00b7 ' + fmtDur(r.secs) + (r.hasAudio ? '' : ' \u00b7 no sound') + ' \u00b7 open the Files app'); return; } catch (e) { werr = e; } }
-          /* could not write to the phone folder: open the share sheet so it can be saved from there (Files, Drive, Gallery apps...) */
+          for (const dir of ['DOCUMENTS', 'EXTERNAL']) { try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + r.name, data, directory: dir, recursive: true }); toast('Video saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal') + ' \u00b7 ' + fmtDur(r.secs) + (r.hasAudio ? '' : ' \u00b7 no sound') + ' \u00b7 open the Files app'); return; } catch (e) { werr = e; } }
           if (P.Share) {
             try {
               await P.Filesystem.writeFile({ path: r.name, data, directory: 'CACHE' });
@@ -1465,20 +1987,32 @@ async function videoOut(mode) {
         }
       } catch (e) { if (errCancel(e)) return; }
     }
+    const cleanType = (r.type || 'video/mp4').split(';')[0] || 'video/mp4';
+    let file = null, canShare = false;
+    try {
+      file = new File([r.blob], r.name, { type: cleanType });
+      canShare = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+    } catch (e) {}
     if (mode === 'share') {
-      try {
-        const f = new File([r.blob], r.name, { type: r.type.split(';')[0] });
-        if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: r.name }); return; }
-      } catch (e) { if (errCancel(e)) return; }
+      if (canShare && file) {
+        try { await navigator.share({ files: [file], title: r.name }); return; }
+        catch (e) {
+          if (errCancel(e)) return;
+          /* Transient user activation expired during real-time recording: prompt 1-tap share with fresh gesture */
+          showVideoReady(r, 'share', file, true); return;
+        }
+      }
+      if (isIOSWeb() || isStandalonePWA() || isAndroidWebView()) { showVideoReady(r, 'share', file, canShare); return; }
+      triggerBlobDownload(r.blob, r.name, 30000); toast('Video downloaded'); return;
     }
-    const a = document.createElement('a'), u = URL.createObjectURL(r.blob);
-    a.href = u; a.download = r.name; a.rel = 'noopener'; a.style.display = 'none'; document.body.appendChild(a); a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(u); }, 8000); toast('Video downloaded');
+    /* mode === 'save': iOS Safari / iOS PWA / Android WebView cannot save blob: videos to Photos via <a download> */
+    if (isIOSWeb() || isAndroidWebView()) { showVideoReady(r, 'save', file, canShare); return; }
+    triggerBlobDownload(r.blob, r.name, 30000); toast('Video downloaded');
   } finally {
-    SH.rec = false;
+    SH.rec = false; SH.recScale = 1;
     ['shShare', 'shSave', 'shSaveVid'].forEach(i => { $(i).disabled = false; });
     $('shSaveVid').textContent = 'Save video';
-    refreshShare();
+    if (SH.open) refreshShare();
   }
 }
 function galRender() {
@@ -1644,9 +2178,7 @@ const contrastHex = (a, b) => { const x = lumHex(a), y = lumHex(b); return (Math
 const hexRgb = h => { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)).join(','); };
 const SANS = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
 const CARD_FONTS = {
-  default: { fam: '"Urbanist",' + SANS, w: '600 ' },
-  figtree: { fam: '"Figtree",' + SANS, w: '600 ' },
-  plexmono: { fam: '"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace', w: '500 ', s: 0.88 }
+  figtree: { fam: '"Figtree",' + SANS, w: '600 ' }
 };
 const CARD_SIZES = { '11': [1080, 1080], '43': [1440, 1080], '21': [1440, 720] };
 const CARD_RADII = { s: 36, m: 72 };
@@ -1662,7 +2194,7 @@ function termPal(d) {
 }
 const BC_CARD_FONT = { fam: '"Inter",' + SANS, w: '600 ' };   /* Blue Chip: card follows the theme's sans UI font when font = Classic */
 const bcCard = () => false;
-const FN = px => { const f = bcCard() ? BC_CARD_FONT : (CARD_FONTS[SET.font] || CARD_FONTS.default); return f.w + Math.round(px * (f.s || 1)) + 'px ' + f.fam; };
+const FN = px => { const f = bcCard() ? BC_CARD_FONT : (CARD_FONTS[SET.font] || CARD_FONTS.figtree); return f.w + Math.round(px * (f.s || 1)) + 'px ' + f.fam; };
 
 function trendPath(pts, raw) {
   if (!raw && pts.length > 2) { const o = pts.map(q => q.slice()); for (let k = 0; k < 2; k++) { const b = o.map(q => q.slice()); for (let i = 1; i < o.length - 1; i++) o[i][1] = b[i][1] * .4 + (b[i - 1][1] + b[i + 1][1]) * .3; } pts = o; }
@@ -1714,10 +2246,10 @@ function lift(p) {
   if (hex(q.ink)) ['muted', 'sub'].forEach(k => { if (!hex(q[k])) return; let m = .7, o = PnlTheme.mix(q[k], q.ink, m); if (hex(q.bg)) for (; m < 1 && contrastHex(o, q.bg) < 7; m += .05) o = PnlTheme.mix(q[k], q.ink, m); q[k] = o; });
   return q;
 }
-function drawCard(cv, d, scale = 1) {
+function drawCard(cv, d, scale = 1, layer = 'all') {
   const sz = CARD_SIZES[SET.cardRatio] || CARD_SIZES['43'], W = sz[0], H = sz[1], land = W > H, sq = W === H, wide = W >= 2 * H;
   const TERM = SET.cardStyle !== 'classic', X = 72, R = CARD_RADII[SET.cardRound] || CARD_RADII.s;
-  const C = lift(TERM ? termPal(d) : CARD), F = TERM ? (SET.font !== 'default' && CARD_FONTS[SET.font] ? FN : (px => (px <= 44 ? '600 ' : '') + Math.round(px) + 'px ' + TERM_FAM)) : FN;
+  const C = lift(TERM ? termPal(d) : CARD), F = TERM ? (CARD_FONTS[SET.font] ? FN : (px => (px <= 44 ? '600 ' : '') + Math.round(px) + 'px ' + TERM_FAM)) : FN;
   if (document.documentElement.getAttribute('data-theme') === 'bluechip' && d.tone < 0) { C.curve = C.loss; C.curveRgb = C.lossRgb; }
   /* Morpho Classic: white curve; Vision: green on profit, red on loss */
   const VT = document.documentElement.getAttribute('data-vt');
@@ -1737,17 +2269,24 @@ function drawCard(cv, d, scale = 1) {
   const T = YT.T, B = YT.B, LX = land ? (TERM ? 790 : 720) : X, RX = W - X;
   const pw = Math.round(W * scale), ph = Math.round(H * scale);
   if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
-  else { const c = cv.getContext('2d'); if (typeof c.reset === 'function') c.reset(); else cv.width = pw; }
   cv.style.border = R ? '0' : '';
   const ctx = cv.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, pw, ph);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  ctx.setLineDash([]);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  const halo = !!(BG.cardImg || C.blobs), hc = lumHex(C.bg) < .4 ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.7)', rawFill = CanvasRenderingContext2D.prototype.fillText.bind(ctx);
+  const halo = !!(BG.cardImg || BG.cardVid || C.blobs), hc = lumHex(C.bg) < .4 ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.7)', rawFill = CanvasRenderingContext2D.prototype.fillText.bind(ctx);
   ctx.fillText = (s, x, y) => { if (!halo) return rawFill(s, x, y); ctx.save(); ctx.shadowColor = hc; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2; rawFill(s, x, y); ctx.restore(); };
+  try {
   const LT = CARD.amoled ? C.ink : C.loss;   /* AMOLED dark: loss text stays white like the arrow */
   const tone = v => v > 0 ? C.win : v < 0 ? LT : C.ink;
   const fit = (txt, size, max, FF) => { FF = FF || F; let f = size; ctx.font = FF(f); while (ctx.measureText(txt).width > max && f > 18) { f -= 2; ctx.font = FF(f); } };
   ctx.save(); rrect(ctx, 0, 0, W, H, R); ctx.clip();
+  if (layer !== 'fg') {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   if (C.blobs) {
     C.blobs.forEach(a => {
@@ -1756,13 +2295,24 @@ function drawCard(cv, d, scale = 1) {
       ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
     });
   }
-  if (BG.cardImg) {
-    const vd = BG.cardVid && BG.cardVid.readyState >= 2 && BG.cardVid.videoWidth ? BG.cardVid : null;
-    const im = vd || BG.cardImg, nw = vd ? vd.videoWidth : im.naturalWidth, nh = vd ? vd.videoHeight : im.naturalHeight;
-    const sc = Math.max(W / nw, H / nh), iw = nw * sc, ih = nh * sc;
-    ctx.drawImage(im, (W - iw) / 2, (H - ih) / 2, iw, ih);
-    ctx.fillStyle = bgShade(bgLvl('card')); ctx.fillRect(0, 0, W, H);
+  {
+    const ff = BG.fastFrame;
+    const vd = ff ? null : (BG.cardVid && BG.cardVid.readyState >= 2 && BG.cardVid.videoWidth ? BG.cardVid : null);
+    const im = ff ? ff.src : (vd || (BG.cardImg && BG.cardImg.naturalWidth ? BG.cardImg : null));
+    if (im) {
+      const nw = ff ? ff.dw : vd ? vd.videoWidth : im.naturalWidth, nh = ff ? ff.dh : vd ? vd.videoHeight : im.naturalHeight;
+      if (nw > 0 && nh > 0) {
+        const sc = Math.max(W / nw, H / nh), iw = nw * sc, ih = nh * sc;
+        try {
+          if (ff && ff.rot) { ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(ff.rot * Math.PI / 180); ctx.drawImage(im, -ff.cw * sc / 2, -ff.ch * sc / 2, ff.cw * sc, ff.ch * sc); ctx.restore(); }
+          else ctx.drawImage(im, (W - iw) / 2, (H - ih) / 2, iw, ih);
+        } catch (e) {}
+        ctx.fillStyle = bgShade(bgLvl('card')); ctx.fillRect(0, 0, W, H);
+      }
+    }
   }
+  }
+  if (layer === 'bg') { ctx.restore(); return; }
   const gc = d.tone > 0 ? C.winRgb : d.tone < 0 ? C.lossRgb : C.glow;
   const gx = land ? 420 : W / 2, gy = land ? 330 : (H === 1350 ? 380 : Math.round(H * .28));
   if (!TERM) {
@@ -1904,10 +2454,20 @@ function drawCard(cv, d, scale = 1) {
   }
   ctx.restore();
   if (R) { rrect(ctx, 1.5, 1.5, W - 3, H - 3, R - 1.5); ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.stroke(); }
+  } finally { delete ctx.fillText; }
 }
 
 let shTok = 0;
-const fontsReady = () => Promise.race([
+function fontsAlreadyLoaded() {
+  try {
+    if (!document.fonts || !document.fonts.check) return false;
+    const f = FONT_FACE[SET.font];
+    if (f && (!document.fonts.check('40px "' + f + '"') || !document.fonts.check('600 40px "' + f + '"'))) return false;
+    if (bcCard() && !document.fonts.check('600 40px "Inter"')) return false;
+    return true;
+  } catch (e) { return false; }
+}
+const fontsReady = () => fontsAlreadyLoaded() ? Promise.resolve() : Promise.race([
   (document.fonts && document.fonts.load ? Promise.all([FONT_FACE[SET.font] ? Promise.all([document.fonts.load('40px "' + FONT_FACE[SET.font] + '"'), document.fonts.load('600 40px "' + FONT_FACE[SET.font] + '"')]) : null, bcCard() ? document.fonts.load('600 40px "Inter"') : null]) : Promise.resolve()).catch(() => {}),
   new Promise(r => setTimeout(r, 700))
 ]);
@@ -1925,27 +2485,31 @@ async function refreshShare() {
   $('shTitle').textContent = tradeMode ? 'Share trade' : 'Share card';
   loadCard();
   const d = cardData(), none = !d || d.empty;
-  $('shShare').disabled = none; $('shSave').disabled = none;
-  $('shHint').textContent = none ? 'No trades in this period.' : (SET.hide && !(SET.balance > 0) ? 'Tip: add your account balance in Settings to show % results.' : '');
+  if (!SH.rec) {
+    $('shShare').disabled = none; $('shSave').disabled = none;
+    if ($('shSaveVid')) $('shSaveVid').disabled = none;
+    $('shHint').textContent = none ? 'No trades in this period.' : (SET.hide && !(SET.balance > 0) ? 'Tip: add your account balance in Settings to show % results.' : '');
+  }
   SH.d = d;
   refreshVidUi();
   if (!d) return;
-  drawCard($('shCanvas'), d);
+  drawCard($('shCanvas'), d, SH.rec ? (SH.recScale || 1) : 1);
   shAnim();
-  if (FONT_FACE[SET.font] || bcCard()) {
+  if ((FONT_FACE[SET.font] || bcCard()) && !fontsAlreadyLoaded()) {
     await fontsReady();
     if (tok !== shTok) return;
-    drawCard($('shCanvas'), d);
+    drawCard($('shCanvas'), d, SH.rec ? (SH.recScale || 1) : 1);
   }
 }
 function shareStep(k) {
+  if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
   if (SH.kind === 'day') {
     const days = [...new Set(visible().map(t => t.date))].sort();
     const nx = k < 0 ? days.filter(x => x < SH.ref).pop() : days.find(x => x > SH.ref);
     SH.ref = nx || addDays(SH.ref, k);
   } else if (SH.kind === 'week') SH.ref = addDays(SH.ref, 7 * k);
   else if (SH.kind === 'month') SH.ref = shiftMonth(SH.ref.slice(0, 7), k) + '-01';
-  refreshShare();
+  refreshShare().catch(() => {});
 }
 function openShare(kind, tradeId) {
   const all = visible(), last = all.length ? all[all.length - 1].date : today();
@@ -1953,10 +2517,11 @@ function openShare(kind, tradeId) {
   SH.ref = kind === 'month' && S.month ? S.month + '-01' : (S.tab === 'reports' && S.day ? S.day : last);
   const sh = $('shSheet'); SH.open = true; document.documentElement.classList.add('modal'); motionOpen(sh);
   try { history.pushState({ share: 1 }, ''); } catch (e) {}
-  refreshShare();
+  refreshShare().catch(() => {});
 }
 function hideShare() {
   if (!SH.open) return;
+  if (SH.rec) { SH.aborted = true; SH.stop = true; }
   SH.open = false; cancelAnimationFrame(SH.raf); SH.raf = 0; try { if (BG.cardVid) BG.cardVid.pause(); } catch (e) {}
   motionClose($('shSheet'));
   if (!S.sheetOpen) { document.documentElement.classList.remove('modal'); requestAnimationFrame(movePill); }
@@ -1987,10 +2552,9 @@ function cardExportScales() {
 }
 function drawExportCanvas(scale) {
   if (!SH.d) return null;
-  if (BG.cardVid) return $('shCanvas');
   const c = document.createElement('canvas');
   try { drawCard(c, SH.d, scale); return c; }
-  catch (e) { try { c.width = c.height = 1; } catch (_) {} return null; }
+  catch (e) { try { c.width = c.height = 1; } catch (_) {} return BG.cardVid ? $('shCanvas') : null; }
 }
 function releaseCardCanvas(c) { if (c && c !== $('shCanvas')) { try { c.width = c.height = 1; } catch (_) {} } }
 const b64Blob = b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: 'image/png' }); };
@@ -2038,23 +2602,31 @@ function exportCardDataURL() {
   try { return canvasToDataURLSafe($('shCanvas')); } catch (e) {}
   return '';
 }
-const cardB64 = () => { const u = exportCardDataURL(); return u ? (u.split(',')[1] || '') : ''; };
+const cardDataOut = () => {
+  const u = exportCardDataURL();
+  if (!u) return null;
+  const ext = /^data:image\/jpeg/i.test(u) ? 'jpg' : 'png';
+  return { data: u.split(',')[1] || '', ext };
+};
+const cardB64 = () => { const o = cardDataOut(); return o ? o.data : ''; };
 const cardBlob = async () => { const b = await exportCardBlob(); if (b) return b; throw new Error('card export failed'); };
 const errCancel = e => !!(e && (e.name === 'AbortError' || /cancel|abort|dismiss/i.test(String(e.message || e))));
 
 async function shareCard() { if (BG.cardVid) return videoOut('share'); return shareCardImg(); }
 async function shareCardImg() {
+  if (cardSaving || !SH.d || SH.d.empty) return;
   const baseName = 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today();
-  try { await fontsReady(); } catch (e) {}
+  if (!fontsAlreadyLoaded()) { try { await fontsReady(); } catch (e) {} }
   if (isNative()) {
     const P = window.Capacitor.Plugins;
     if (P.Filesystem && P.Share) {
       try {
-        const data = cardB64();
-        if (data) {
-          await P.Filesystem.writeFile({ path: baseName + '.png', data, directory: 'CACHE' });
-          const r = await P.Filesystem.getUri({ path: baseName + '.png', directory: 'CACHE' });
-          await P.Share.share({ title: baseName + '.png', files: [r.uri], dialogTitle: 'Share P&L card' });
+        const out = cardDataOut();
+        if (out && out.data) {
+          const fname = baseName + '.' + out.ext;
+          await P.Filesystem.writeFile({ path: fname, data: out.data, directory: 'CACHE' });
+          const r = await P.Filesystem.getUri({ path: fname, directory: 'CACHE' });
+          await P.Share.share({ title: fname, files: [r.uri], dialogTitle: 'Share P&L card' });
           return;
         }
       } catch (e) { if (errCancel(e)) return; }
@@ -2066,7 +2638,7 @@ async function shareCardImg() {
       const ext = /jpeg/.test(blob.type) ? 'jpg' : 'png';
       const name = baseName + '.' + ext;
       const file = new File([blob], name, { type: blob.type || 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
     }
   } catch (e) { if (errCancel(e)) return; }
   await saveCard();
@@ -2088,26 +2660,28 @@ function showCardImage() {
 
 let cardSaving = false;
 async function saveCard() {
-  if (cardSaving) return; cardSaving = true;
+  if (cardSaving || !SH.d || SH.d.empty) return;
+  cardSaving = true;
   try { await saveCardNow(); } finally { cardSaving = false; }
 }
 async function saveCardNow() {
   const baseName = 'pnl-card-' + (SH.kind === 'trade' ? 'trade' : SH.kind) + '-' + today();
-  try { await fontsReady(); } catch (e) {}
+  if (!fontsAlreadyLoaded()) { try { await fontsReady(); } catch (e) {} }
   if (isNative()) {
     const P = window.Capacitor.Plugins;
     if (P.Filesystem) {
-      let data = null; try { data = cardB64(); } catch (e) {}
-      if (data) {
+      let out = null; try { out = cardDataOut(); } catch (e) {}
+      if (out && out.data) {
+        const fname = baseName + '.' + out.ext;
         try { if (P.Filesystem.requestPermissions) await P.Filesystem.requestPermissions(); } catch (e) {}
-        for (const dir of ['DOCUMENTS', 'DOCUMENTS', 'EXTERNAL']) {
-          try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + baseName + '.png', data, directory: dir, recursive: true }); toast('Saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal')); return; } catch (e) {}
+        for (const dir of ['DOCUMENTS', 'EXTERNAL']) {
+          try { await P.Filesystem.writeFile({ path: 'PnLJournal/' + fname, data: out.data, directory: dir, recursive: true }); toast('Saved to ' + (dir === 'EXTERNAL' ? 'PnLJournal folder' : 'Documents/PnLJournal')); return; } catch (e) {}
         }
         if (P.Share) {
           try {
-            await P.Filesystem.writeFile({ path: baseName + '.png', data, directory: 'CACHE' });
-            const r = await P.Filesystem.getUri({ path: baseName + '.png', directory: 'CACHE' });
-            await P.Share.share({ title: baseName + '.png', files: [r.uri], dialogTitle: 'Save P&L card' });
+            await P.Filesystem.writeFile({ path: fname, data: out.data, directory: 'CACHE' });
+            const r = await P.Filesystem.getUri({ path: fname, directory: 'CACHE' });
+            await P.Share.share({ title: fname, files: [r.uri], dialogTitle: 'Save P&L card' });
             return;
           } catch (e) { if (errCancel(e)) return; }
         }
@@ -2119,9 +2693,15 @@ async function saveCardNow() {
     if (blob) {
       const ext = /jpeg/.test(blob.type) ? 'jpg' : 'png';
       const name = baseName + '.' + ext;
-      const a = document.createElement('a'), u = URL.createObjectURL(blob);
-      a.href = u; a.download = name; a.rel = 'noopener'; a.style.display = 'none'; document.body.appendChild(a); a.click();
-      setTimeout(() => { a.remove(); URL.revokeObjectURL(u); }, 4000); toast('Image downloaded'); return;
+      if ((isIOSWeb() && isStandalonePWA()) || isAndroidWebView()) {
+        try {
+          const file = new File([blob], name, { type: blob.type || 'image/png' });
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+        } catch (e) { if (errCancel(e)) return; }
+        showCardImage(); return;
+      }
+      triggerBlobDownload(blob, name, 15000);
+      toast('Image downloaded'); return;
     }
   } catch (e) {}
   showCardImage();
@@ -2607,7 +3187,7 @@ function dashRows() {
   let list = dashTrades();
   if (DS.filter === 'win') list = list.filter(t => t.pnl > 0); else if (DS.filter === 'loss') list = list.filter(t => t.pnl < 0);
   const q = DS.q.trim().toLowerCase();
-  if (q) list = list.filter(t => t.symbol.toLowerCase().includes(q) || String(t.note || '').toLowerCase().includes(q));
+  if (q) list = list.filter(t => t.symbol.toLowerCase().includes(q) || String(t.session || '').toLowerCase().includes(q) || String(t.note || '').toLowerCase().includes(q));
   return list.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
 }
 function renderDashList() {
@@ -2629,7 +3209,7 @@ function renderDashTrades() {
   const W = D.filter(t => t.pnl > 0).length, L = D.filter(t => t.pnl < 0).length;
   const b = (v, txt) => `<button type="button" data-dact="tf" data-v="${v}" aria-pressed="${DS.filter === v}">${txt}</button>`;
   el.innerHTML = `<h2>Trades</h2><div class="dtools"><div class="seg seg3" id="dfilter" role="group" aria-label="Filter trades">${b('all', 'All ' + D.length)}${b('win', 'Wins ' + W)}${b('loss', 'Losses ' + L)}</div>
-    <input id="dsearch" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" placeholder="Search symbol or note" value="${esc(DS.q)}" aria-label="Search trades"></div><div id="dlist"></div>`;
+    <input id="dsearch" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" placeholder="Search symbol, session or note" value="${esc(DS.q)}" aria-label="Search trades"></div><div id="dlist"></div>`;
   renderDashList();
 }
 
@@ -2732,13 +3312,13 @@ document.addEventListener('click', e => {
   else if (a === 'sess') setSess(S.session === v ? '' : v);
   else if (a === 'gunit') { SET.unit = v; saveSet(); renderGoalForm(true); }
   else if (a === 'goalset') { setNavDir('data'); S.tab = 'data'; render(); requestAnimationFrame(() => $('goalPanel').scrollIntoView()); }
-  else if (a === 'shkind') { SH.kind = v; refreshShare(); }
+  else if (a === 'shkind') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SH.kind = v; refreshShare().catch(() => {}); }
   else if (a === 'shstep') shareStep(Number(v));
-  else if (a === 'shhide') { SET.hide = v === '1'; saveSet(); refreshShare(); }
-  else if (a === 'font') { SET.font = v; saveSet(); applyFont(); if (SH.open) refreshShare(); }
-  else if (a === 'shstyle') { SET.cardStyle = v; saveSet(); refreshShare(); }
-  else if (a === 'shratio') { SET.cardRatio = v; saveSet(); refreshShare(); }
-  else if (a === 'shround') { SET.cardRound = v; saveSet(); refreshShare(); }
+  else if (a === 'shhide') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SET.hide = v === '1'; saveSet(); refreshShare().catch(() => {}); }
+  else if (a === 'font') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SET.font = v; saveSet(); applyFont(); if (SH.open) refreshShare().catch(() => {}); }
+  else if (a === 'shstyle') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SET.cardStyle = v; saveSet(); refreshShare().catch(() => {}); }
+  else if (a === 'shratio') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SET.cardRatio = v; saveSet(); refreshShare().catch(() => {}); }
+  else if (a === 'shround') { if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; } SET.cardRound = v; saveSet(); refreshShare().catch(() => {}); }
 });
 $('themeOpen').addEventListener('click', openTheme);
 $('themeClose').addEventListener('click', closeTheme);
@@ -2787,9 +3367,9 @@ $('shareBtn').onclick = () => openShare(S.tab === 'reports' ? 'month' : 'day');
 $('shareTradeBtn').onclick = () => { if (S.editing) openShare('trade', S.editing); };
 $('shClose').onclick = closeShare;
 $('shScrim').onclick = closeShare;
-$('shShare').onclick = shareCard;
-$('shSave').onclick = saveCard;
-$('shSaveVid').onclick = () => videoOut('save');
+$('shShare').onclick = () => { shareCard().catch(e => logErr('shareCard', e)); };
+$('shSave').onclick = () => { saveCard().catch(e => logErr('saveCard', e)); };
+$('shSaveVid').onclick = () => { videoOut('save').catch(e => logErr('videoOut', e)); };
 $('goalSave').onclick = saveGoal;
 $('exportBtn').onclick = exportBackup;
 $('copyBtn').onclick = copyBackup;
@@ -2822,10 +3402,11 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http') &&
 }
 
 $('shGal').addEventListener('click', e => {
-  const x = e.target.closest('[data-gdel]'); if (x) { e.stopPropagation(); galDelete(x.dataset.gdel); return; }
+  if (SH.rec) { toast('Wait for video recording to finish or tap Stop'); return; }
+  const x = e.target.closest('[data-gdel]'); if (x) { e.stopPropagation(); galDelete(x.dataset.gdel).catch(() => {}); return; }
   const b = e.target.closest('[data-g]'); if (!b) return;
   const v = b.dataset.g;
-  if (v === 'add') $('bgFileCard').click(); else if (v === 'none') galSelect(null); else galSelect(v);
+  if (v === 'add') $('bgFileCard').click(); else if (v === 'none') galSelect(null).catch(() => {}); else galSelect(v).catch(() => {});
 });
 bgInit();
 galInit();

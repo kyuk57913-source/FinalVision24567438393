@@ -12,9 +12,9 @@
   
   TH['clean-light']={id:'clean-light',name:'Clean Light',mode:'light',bg:'#F5F4F0',surface:'#FFFFFF',line:'#D6E1DC',ink:'#1C252B',muted:'#617478',accent:'#286B72',hi:'#286B72',win:'#168163',loss:'#C84355'};
   
-  TH['pv-obsidian']={id:'pv-obsidian',name:'Obsidian Mint',mode:'dark',bg:'#050806',surface:'#0d1310',line:'#1b2a22',ink:'#eaf5ee',muted:'#86a091',accent:'#3dff9e',hi:'#3dff9e',win:'#3dff9e',loss:'#ff5d6c'};TH['pv-porcelain']={id:'pv-porcelain',name:'Porcelain',mode:'light',bg:'#eef1f6',surface:'#ffffff',line:'#dde3ee',ink:'#0f1a2e',muted:'#62708a',accent:'#2a5bff',hi:'#2a5bff',win:'#0a8f5a',loss:'#d6334a'};TH['pv-terminal']={id:'pv-terminal',name:'Neon Terminal',mode:'dark',bg:'#03060a',surface:'#070d14',line:'#12303d',ink:'#d6f6ff',muted:'#6a96a5',accent:'#00b8d0',hi:'#00e5ff',win:'#00ffa3',loss:'#ff3d81'};TH['pv-holo']={id:'pv-holo',name:'Holo',mode:'dark',bg:'#0b0b10',surface:'#14141c',line:'#26262f',ink:'#f6f6fb',muted:'#9393a8',accent:'#a98bff',hi:'#c8b6ff',win:'#b6ffc9',loss:'#ff9ad5'};TH['pv-lime']={id:'pv-lime',name:'Bento Lime',mode:'light',bg:'#ececf1',surface:'#ffffff',line:'#dcdce4',ink:'#111114',muted:'#6a6a78',accent:'#111114',hi:'#111114',win:'#0f8a4c',loss:'#e5384f'};TH['pv-swiss']={id:'pv-swiss',name:'Swiss Mono',mode:'light',bg:'#ffffff',surface:'#ffffff',line:'#d9d9d9',ink:'#000000',muted:'#6b6b6b',accent:'#000000',hi:'#000000',win:'#00a35c',loss:'#e0001a'};
-  var KEY='pnl-theme',MODE_KEY='pnl-color-mode',modes={amoled:1,black:1,white:1},cur='pv-holo';
-  try{var sv=localStorage.getItem(KEY);if(TH[sv])cur=sv}catch(e){}
+  TH['pv-obsidian']={id:'pv-obsidian',name:'Obsidian Mint',mode:'dark',bg:'#050806',surface:'#0d1310',line:'#1b2a22',ink:'#eaf5ee',muted:'#86a091',accent:'#3dff9e',hi:'#3dff9e',win:'#3dff9e',loss:'#ff5d6c'};TH['pv-porcelain']={id:'pv-porcelain',name:'Porcelain',mode:'light',bg:'#eef1f6',surface:'#ffffff',line:'#dde3ee',ink:'#0f1a2e',muted:'#62708a',accent:'#2a5bff',hi:'#2a5bff',win:'#0a8f5a',loss:'#d6334a'};TH['pv-terminal']={id:'pv-terminal',name:'Neon Terminal',mode:'dark',bg:'#03060a',surface:'#070d14',line:'#12303d',ink:'#d6f6ff',muted:'#6a96a5',accent:'#00b8d0',hi:'#00e5ff',win:'#00ffa3',loss:'#ff3d81'};TH['pv-holo']={id:'pv-holo',name:'Holo',mode:'dark',bg:'#0b0b10',surface:'#14141c',line:'#26262f',ink:'#f6f6fb',muted:'#9393a8',accent:'#a98bff',hi:'#c8b6ff',win:'#b6ffc9',loss:'#ff9ad5'};TH['pv-lime']={id:'pv-lime',name:'Bento Lime',mode:'light',bg:'#ececf1',surface:'#ffffff',line:'#dcdce4',ink:'#111114',muted:'#6a6a78',accent:'#111114',hi:'#111114',win:'#0f8a4c',loss:'#e5384f'};TH['pv-emerald']={id:'pv-emerald',name:'Emerald Night',mode:'dark',bg:'#0a0a0b',surface:'#131315',line:'#232326',ink:'#f5f5f6',muted:'#8d8d95',accent:'#22d391',hi:'#22d391',win:'#22d391',loss:'#f0566b'};TH['pv-swiss']={id:'pv-swiss',name:'Swiss Mono',mode:'light',bg:'#ffffff',surface:'#ffffff',line:'#d9d9d9',ink:'#000000',muted:'#6b6b6b',accent:'#000000',hi:'#000000',win:'#00a35c',loss:'#e0001a'};
+  var KEY='pnl-theme',MODE_KEY='pnl-color-mode',modes={amoled:1,black:1,white:1},cur='pv-emerald';
+  try{var sv=localStorage.getItem(KEY);if(sv==='pv-watcher')sv='pv-emerald';if(TH[sv])cur=sv}catch(e){}
   var T=TH[cur],mode=T.mode==='light'?'white':'black';
   try{var sm=localStorage.getItem(MODE_KEY);if(modes[sm])mode=sm}catch(e){}
   function copy(t){var p={},k;for(k in t)p[k]=t[k];return p}
@@ -45,6 +45,11 @@
     v['--btn']=a;v['--btn-ink']=p.btnInk||on(a);v['--curve']=p.hi;v['--accent']=p.hi;v['--hi']=p.hi;
     v['--tint']=rgb(p.hi);v['--tint-soft']=rgb(mix(a,p.bg,.4));
     v['--win']=p.win;v['--loss']=p.loss;v['--win-rgb']=rgb(p.win);v['--loss-rgb']=rgb(p.loss);
+    var sb=p.accent;if(contrast(sb,p.surface)<3||contrast(sb,p.bg)<3)sb=p.ink;
+    var si=on(sb),opp=si==='#FFFFFF'?'#000000':'#FFFFFF';
+    for(var z=1;z<=40&&contrast(si,sb)<4.7;z++)sb=mix(sb,opp,z*.02>1?1:.04);
+    si=on(sb);
+    v['--sel-bg']=sb;v['--sel-ink']=si;v['--sel-line']=sb;v['--sel-rgb']=rgb(sb);
     v['--glow']='none';v['--metal']=p.line;v['--metal-soft']=p.line;v['--conic']=a;
     v['--s2']=isA?'#050505':mix(p.surface,p.bg,.48);v['--s3']=isA?'#0B0B0B':mix(p.surface,p.bg,.18);
     v['--grad']='linear-gradient(135deg,'+a+','+p.hi+')';
@@ -57,10 +62,11 @@
     KEYS.forEach(function(k){r.style.setProperty(k,v[k])});
     r.setAttribute('data-theme','vision');r.setAttribute('data-vt',T.id);r.setAttribute('data-mode',mode==='white'?'light':'dark');r.setAttribute('data-color-mode',mode);r.style.colorScheme=mode==='white'?'light':'dark';
     if(m)m.setAttribute('content',v['--bg']);
+    try{window.dispatchEvent(new Event('pnl-themechange'))}catch(e){}
   }
   function setMode(next){if(!modes[next])return;mode=next;try{localStorage.setItem(MODE_KEY,mode)}catch(e){}apply()}
   window.PnlTheme={
-    list:[TH['pv-obsidian'],TH['pv-porcelain'],TH['pv-terminal'],TH['pv-holo'],TH['pv-lime'],TH['pv-swiss'],TH['clean-light'],TH.vision,TH.morpho],
+    list:[TH['pv-emerald'],TH['pv-obsidian'],TH['pv-porcelain'],TH['pv-terminal'],TH['pv-holo'],TH['pv-lime'],TH['pv-swiss'],TH['clean-light'],TH.vision,TH.morpho],
     find:function(){return T},get:function(){return T.id},getMode:function(){return mode},
     set:function(id){if(!TH[id])return;T=TH[id];try{localStorage.setItem(KEY,id)}catch(e){}apply()},setMode:setMode,apply:apply,
     resolve:function(t){return t},white:function(){return mode==='white'},setWhite:function(yes){setMode(yes?'white':'black')},mix:mix,on:on

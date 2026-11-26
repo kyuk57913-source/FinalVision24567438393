@@ -1175,6 +1175,7 @@ html[data-theme="vision"] .top .shbtn[hidden]{display:none!important}
 
 /* ===== premium-css ===== */
 /* Premium themes: colours, borders, shadows, glow only. No position, size, spacing or layout changes. */
+.theme-pv-emerald{--tp-bg:#0a0a0b;--tp-panel:#131315;--tp-line:#232326;--tp-accent:#22d391;--tp-ink:#f5f5f6;--tp-muted:#8d8d95}
 .theme-pv-obsidian{--tp-bg:#050806;--tp-panel:#0d1310;--tp-line:#1b2a22;--tp-accent:#3dff9e;--tp-ink:#eaf5ee;--tp-muted:#86a091}
 .theme-pv-aurora{--tp-bg:#0a0716;--tp-panel:#17102b;--tp-line:#2d2250;--tp-accent:#19fb9b;--tp-ink:#f4f0ff;--tp-muted:#aaa2c8}
 .theme-pv-porcelain{--tp-bg:#eef1f6;--tp-panel:#ffffff;--tp-line:#dde3ee;--tp-accent:#2a5bff;--tp-ink:#0f1a2e;--tp-muted:#62708a}
@@ -1316,3 +1317,72 @@ html:root[data-font="default"]:not(#a):not(#b){--serif:"Urbanist",system-ui,-app
 html:root[data-font="figtree"]:not(#a):not(#b){--serif:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--mono:var(--serif)}
 html:root[data-font="plexmono"]:not(#a):not(#b){--serif:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono","Droid Sans Mono","Noto Sans Mono",monospace;--mono:var(--serif)}
 html:root[data-font]:not(#a):not(#b) body{font-family:var(--serif)}
+
+
+/* ===== emerald theme: near-black canvas, green accent, white pill controls (news-terminal look) ===== */
+html[data-vt="pv-emerald"] body{background-image:none}
+html[data-vt="pv-emerald"][data-theme="vision"] :is(.seg,.drange,.tl-tabs,.crange){border-radius:999px!important;background:var(--s2);border:1px solid var(--line);padding:3px;gap:2px}
+html[data-vt="pv-emerald"][data-theme="vision"] :is(.seg,.drange,.crange) button{border-radius:999px!important;color:var(--muted);font-weight:600}
+html[data-vt="pv-emerald"][data-theme="vision"] .seg button[aria-pressed="true"],
+html[data-vt="pv-emerald"] .crange button[aria-pressed="true"]{background:#fff;background-image:none;color:#0a0a0b;border-color:#fff;font-weight:700}
+html[data-vt="pv-emerald"] .tl-tabs button[aria-pressed="true"]{background:#fff;color:#0a0a0b}
+html[data-vt="pv-emerald"][data-theme="vision"] .chip{border-radius:999px!important;background:var(--s2);border:1px solid var(--line);color:var(--muted)}
+html[data-vt="pv-emerald"][data-theme="vision"] .chip[aria-pressed="true"]{background:#fff;color:#0a0a0b;border-color:#fff}
+html[data-vt="pv-emerald"][data-theme="vision"] .btn{border-radius:999px!important;border-color:var(--line)}
+html[data-vt="pv-emerald"][data-theme="vision"] :is(.btn.primary,.fab){background:var(--accent);background-image:none;color:#04150e;border-color:var(--accent);box-shadow:none;border-radius:999px!important;font-weight:700}
+html[data-vt="pv-emerald"][data-theme="vision"] .fab{border-radius:50%!important;box-shadow:0 10px 28px -10px rgba(34,211,145,.6)}
+html[data-vt="pv-emerald"] .fab svg{stroke:#04150e}
+html[data-vt="pv-emerald"][data-theme="vision"] .hpill{background:rgba(34,211,145,.14);border:1px solid rgba(34,211,145,.35)}
+html[data-vt="pv-emerald"][data-theme="vision"] :is(.panel,.hero,.livewrap,.goal){border-radius:12px!important}
+html[data-vt="pv-emerald"][data-theme="vision"] :is(input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file]),textarea){border-radius:10px!important;background:var(--s2);border-color:var(--line)}
+html[data-vt="pv-emerald"] .dtabs button[aria-selected="true"]{color:#fff}
+html[data-vt="pv-emerald"] .dtabs button[aria-selected="true"]::after{background:var(--accent);height:2px}
+html[data-vt="pv-emerald"] h2{font-weight:700;letter-spacing:-.01em}
+html[data-vt="pv-emerald"] #hero :is(.big,.num,h1),html[data-vt="pv-emerald"] #stats .st dd{font-weight:800;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+html[data-vt="pv-emerald"][data-theme="vision"] header.site .logo .lt{font-weight:800;letter-spacing:-.01em}
+html[data-vt="pv-emerald"][data-theme="vision"] nav{background:rgba(10,10,11,.94);border-top:1px solid var(--line)}
+html[data-vt="pv-emerald"][data-theme="vision"] nav button[aria-current="page"]{background:rgba(34,211,145,.12);color:var(--ink);border-radius:10px!important}
+html[data-vt="pv-emerald"][data-theme="vision"] nav button[aria-current="page"] svg{color:var(--accent)}
+html[data-vt="pv-emerald"] .gbar,html[data-vt="pv-emerald"] .tl-ls,html[data-vt="pv-emerald"] .tl-tip .bar{border-radius:999px!important}
+html[data-vt="pv-emerald"] .tl-tip{border-radius:14px}
+html[data-vt="pv-emerald"] .tl-tiles{border-radius:10px;background:transparent}
+
+
+/* ===== tighter bottom space (the bottom bar became a side menu) + tagline ===== */
+html[data-theme="vision"] main{padding-bottom:calc(var(--sab) + 52px)!important}
+html[data-theme="vision"] .kyv{margin-top:30px!important}
+.kyv::before{margin-bottom:12px!important}
+.kyv{font-family:'Cardo','Times New Roman',serif;font-size:12px;letter-spacing:.32em;padding-left:.32em;font-weight:400}
+.kyv small{display:block;margin-top:9px;font-family:'Cardo','Times New Roman',serif;font-size:9.5px;letter-spacing:.26em;padding-left:.26em;font-weight:400;opacity:.7;color:var(--muted)}
+
+
+/* ===== contrast fix: selected items always use --sel-bg / --sel-ink (set in boot.js per theme x mode) ===== */
+html[data-theme="vision"][data-color-mode] :is(.chip[aria-pressed="true"],.seg button[aria-pressed="true"],.crange button[aria-pressed="true"],.tl-tabs button[aria-pressed="true"],.btn.primary,.dpday.sel,.dpday.on){
+  background:var(--sel-bg)!important;background-image:none!important;color:var(--sel-ink)!important;border-color:var(--sel-bg)!important;font-weight:700}
+html[data-theme="vision"][data-color-mode] :is(.chip[aria-pressed="true"],.seg button[aria-pressed="true"],.crange button[aria-pressed="true"],.tl-tabs button[aria-pressed="true"],.btn.primary,.dpday.sel) :is(svg,span,small,i,b){color:inherit!important}
+html[data-theme="vision"][data-color-mode] nav button[aria-current="page"],
+html[data-theme="vision"][data-color-mode] nav button.hot,
+html[data-theme="vision"][data-color-mode] nav button[data-act="tab"][aria-current="page"]{
+  background:var(--sel-bg)!important;background-image:none!important;color:var(--sel-ink)!important}
+html[data-theme="vision"][data-color-mode] nav button[aria-current="page"] :is(svg,span,small),
+html[data-theme="vision"][data-color-mode] nav button.hot :is(svg,span,small){color:var(--sel-ink)!important;stroke:currentColor}
+html[data-theme="vision"][data-color-mode] nav.dragging button[aria-current="page"]:not(.hot){background:transparent!important;color:var(--muted)!important}
+html[data-theme="vision"][data-color-mode] nav.dragging button[aria-current="page"]:not(.hot) :is(svg,span,small){color:var(--muted)!important}
+/* buttons that are filled with the accent colour */
+html[data-theme="vision"][data-color-mode] :is(.btn.primary,.btn.accent,button.primary,.fab,#addBtn,.addbtn){color:var(--sel-ink)!important}
+html[data-theme="vision"][data-color-mode] :is(.btn.primary,.fab,#addBtn,.addbtn) svg{color:var(--sel-ink)!important;stroke:currentColor}
+/* underline-style tabs and focus rings follow the legible accent */
+html[data-theme="vision"][data-color-mode] .dtabs button[aria-selected="true"]::after{background:var(--sel-bg)!important;background-image:none!important}
+html[data-theme="vision"][data-color-mode] :is(input,textarea,select):focus{border-color:var(--sel-bg)!important;box-shadow:0 0 0 2px rgba(var(--sel-rgb),.28)}
+html[data-theme="vision"][data-color-mode] .cell.sel,html[data-theme="vision"][data-color-mode] .gtile.sel{outline-color:var(--sel-bg)}
+/* win / loss text on its own tinted background */
+html[data-theme="vision"][data-color-mode] .cell.w :is(.d,.a){color:var(--win)}
+html[data-theme="vision"][data-color-mode] .cell.l :is(.d,.a){color:var(--loss)}
+html[data-theme="vision"][data-color-mode] .cell.w{background:rgba(var(--win-rgb),.1)}
+html[data-theme="vision"][data-color-mode] .cell.l{background:rgba(var(--loss-rgb),.1)}
+html[data-theme="vision"][data-color-mode] .dtabs button[aria-selected="true"]{color:var(--ink)!important}
+html[data-theme="vision"][data-color-mode] .btn.danger{background:rgba(var(--loss-rgb),.08);color:color-mix(in srgb,var(--loss) 65%,var(--ink))}
+html[data-theme="vision"][data-color-mode] .cell.w :is(.d,.a){color:color-mix(in srgb,var(--win) 70%,var(--ink))}
+html[data-theme="vision"][data-color-mode] .cell.l :is(.d,.a){color:color-mix(in srgb,var(--loss) 70%,var(--ink))}
+html[data-theme="vision"][data-color-mode] :is(#f-buy,#f-profit)[aria-pressed="true"]{background:rgba(var(--win-rgb),.16);color:color-mix(in srgb,var(--win) 70%,var(--ink))}
+html[data-theme="vision"][data-color-mode] :is(#f-sell,#f-loss)[aria-pressed="true"]{background:rgba(var(--loss-rgb),.16);color:color-mix(in srgb,var(--loss) 70%,var(--ink))}

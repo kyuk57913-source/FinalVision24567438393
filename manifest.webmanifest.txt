@@ -1,0 +1,31 @@
+{
+  "name": "Vision",
+  "short_name": "Vision",
+  "description": "Vision trading journal",
+  "id": "/FinalVision24567438393/",
+  "start_url": "/FinalVision24567438393/",
+  "scope": "/FinalVision24567438393/",
+  "display": "fullscreen",
+  "background_color": "#090a10",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

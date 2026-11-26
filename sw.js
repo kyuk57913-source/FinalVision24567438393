@@ -1,5 +1,5 @@
 /* Service worker — offline app-shell cache (GitHub Pages safe, relative paths) */
-const VERSION = 'v1';
+const VERSION = 'v14';
 const CACHE = 'app-shell-' + VERSION;
 
 const SHELL = [
@@ -10,6 +10,7 @@ const SHELL = [
   'boot.js',
   'app.js',
   'extras.js',
+  'tradelog.js',
   'ui-fx.js',
   'manifest.webmanifest',
   'favicon.ico',
@@ -44,20 +45,51 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return; // cross-origin ကို မထိ
 
   // Page navigation: network-first, offline ဆိုရင် cached index.html
+  // index.html (app root) ကိုပဲ cache ထဲ index.html အဖြစ်သိမ်းမယ် — clear-cache.html လို တခြားစာမျက်နှာတွေက မထိအောင်
   if (req.mode === 'navigate') {
+    const root = new URL('./', self.registration.scope).pathname;
+    const isApp = url.pathname === root || url.pathname === root + 'index.html';
     e.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('index.html', copy));
+          if (isApp && res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('index.html', copy));
+          }
           return res;
         })
-        .catch(() => caches.match('index.html').then((r) => r || caches.match('./')))
+        .catch(() =>
+          (isApp ? Promise.resolve(null) : caches.match(req))
+            .then((r) => r || caches.match('index.html'))
+            .then((r) => r || caches.match('./'))
+        )
     );
     return;
   }
 
-  // Static files: stale-while-revalidate
+  // Code ဖိုင်တွေ (js + main.css): network-first — index.html နဲ့ JS version မကိုက်တာမျိုး မဖြစ်အောင်
+  // net က 4 စက္ကန့်အတွင်း မဖြေရင် (သို့) offline ဆိုရင် cache ကိုသုံး
+  const isCode = /\.js$/.test(url.pathname) || /\/main\.css$/.test(url.pathname);
+  if (isCode) {
+    e.respondWith(
+      caches.match(req).then((cached) => {
+        const net = fetch(req, { cache: 'no-cache' }).then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy));
+            return res;
+          }
+          return cached || res; // 404 စတဲ့ error ဖြစ်ရင် cache ရှိသလောက်ကို ဆက်သုံး
+        });
+        if (!cached) return net;
+        const slow = new Promise((resolve) => setTimeout(() => resolve(cached), 4000));
+        return Promise.race([net, slow]).catch(() => cached);
+      })
+    );
+    return;
+  }
+
+  // တခြား static ဖိုင်တွေ (fonts.css, icons): stale-while-revalidate
   e.respondWith(
     caches.match(req).then((cached) => {
       const net = fetch(req)
